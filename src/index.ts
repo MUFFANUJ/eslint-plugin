@@ -13,6 +13,8 @@ import noUntranslatedString from './rules/no-untranslated-string';
 import noSchemaEnum from './rules/no-schema-enum';
 import requireSoftAssertionsBeforeSnapshots from './rules/require-soft-assertions-before-snapshots';
 import noPageconfigBaseUrl from './rules/no-pageconfig-base-url';
+import requireDisposableOwnership from './rules/require-disposable-ownership';
+import requireDisposableTransfer from './rules/require-disposable-transfer';
 
 const plugin = {
   rules: {
@@ -25,7 +27,9 @@ const plugin = {
     'no-schema-enum': noSchemaEnum,
     'require-soft-assertions-before-snapshots':
       requireSoftAssertionsBeforeSnapshots,
-    'no-pageconfig-base-url': noPageconfigBaseUrl
+    'no-pageconfig-base-url': noPageconfigBaseUrl,
+    'require-disposable-ownership': requireDisposableOwnership,
+    'require-disposable-transfer': requireDisposableTransfer
   },
   configs: {
     recommended: [
@@ -38,7 +42,9 @@ const plugin = {
           'jupyter/no-translation-concatenation': 'error',
           'jupyter/token-format': 'error',
           'jupyter/no-untranslated-string': 'warn',
-          'jupyter/no-pageconfig-base-url': 'warn'
+          'jupyter/no-pageconfig-base-url': 'warn',
+          'jupyter/require-disposable-ownership': 'warn',
+          'jupyter/require-disposable-transfer': 'warn'
         }
       },
       {
@@ -49,12 +55,7 @@ const plugin = {
         }
       },
       {
-        files: [
-          '**/*.spec.ts',
-          '**/*.spec.js',
-          '**/*.test.ts',
-          '**/*.test.js'
-        ],
+        files: ['**/*.spec.ts', '**/*.spec.js', '**/*.test.ts', '**/*.test.js'],
         rules: {
           'jupyter/require-soft-assertions-before-snapshots': 'warn'
         }
@@ -69,7 +70,9 @@ const plugin = {
         'jupyter/token-format': 'error',
         'jupyter/no-untranslated-string': 'warn',
         'jupyter/no-schema-enum': 'warn',
-        'jupyter/no-pageconfig-base-url': 'warn'
+        'jupyter/no-pageconfig-base-url': 'warn',
+        'jupyter/require-disposable-ownership': 'warn',
+        'jupyter/require-disposable-transfer': 'warn'
       },
       overrides: [
         {

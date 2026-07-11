@@ -26,6 +26,8 @@ const sidebars: SidebarsConfig = {
         'rules/no-untranslated-string',
         'rules/plugin-activation-args',
         'rules/plugin-description',
+        'rules/require-disposable-ownership',
+        'rules/require-disposable-transfer',
         'rules/require-soft-assertions-before-snapshots',
         'rules/token-format'
       ]
