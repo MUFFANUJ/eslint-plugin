@@ -43,7 +43,9 @@ function makeProjectConfig(projectName) {
       'jupyter/plugin-description': 'error',
       'jupyter/no-translation-concatenation': 'error',
       'jupyter/token-format': 'error',
-      'jupyter/require-soft-assertions-before-snapshots': 'error'
+      'jupyter/require-soft-assertions-before-snapshots': 'error',
+      'jupyter/require-disposable-ownership': 'error',
+      'jupyter/require-disposable-transfer': 'error'
     },
     languageOptions: {
       parser: resolvedParser,
