@@ -318,6 +318,90 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           readonly isDisposed: boolean;
           dispose(): void;
         }
+        declare function getCurrent(): IDisposable | null;
+        declare function getManager(): IDisposable;
+        declare function contextForWidget(widget: object): IDisposable | undefined;
+        declare const widget: object;
+
+        const current = getCurrent();
+        getManager();
+        contextForWidget(widget);
+        console.log(current);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+
+        class Shell {
+          private _currentTabBar(): IDisposable | null {
+            return null;
+          }
+
+          private _adjacentBar(): IDisposable | null {
+            return null;
+          }
+
+          run(): void {
+            const current = this._currentTabBar();
+            const next = this._adjacentBar();
+            console.log(current, next);
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const registry: {
+          addFileType(options: object): IDisposable;
+          addWidgetExtension(name: string): IDisposable;
+          registerItem(name: string): IDisposable;
+        };
+        declare const tabs: {
+          insertTab(index: number): IDisposable;
+        };
+
+        registry.addFileType({});
+        registry.addWidgetExtension('cell');
+        registry.registerItem('status');
+        tabs.insertTab(0);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        class Cell implements IDisposable {
+          readonly isDisposed = false;
+          dispose(): void {}
+          initializeState(): this {
+            return this;
+          }
+        }
+
+        const cell = new Cell();
+        cell.initializeState();
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
         declare const toolbarRegistry: {
           addToolbarFactory(name: string): IDisposable;
         };
@@ -405,6 +489,27 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         {
           messageId: 'unhandledDisposable',
           data: { name: 'add' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      options: [{ ignoredReturnFunctionNames: [] }],
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const registry: {
+          addFileType(options: object): IDisposable;
+        };
+
+        registry.addFileType({});
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'addFileType' }
         }
       ]
     },

@@ -213,6 +213,56 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     {
       filename: typeAwareFilename,
       code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare function showDialog(options: { body: Widget }): void;
+
+        showDialog({ body: new Widget() });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        class Dialog {
+          readonly isDisposed = false;
+          constructor(options: { body: Widget }) {}
+          dispose(): void {}
+          launch(): Promise<void> {
+            return Promise.resolve();
+          }
+        }
+
+        async function prompt(): Promise<void> {
+          const dialog = new Dialog({ body: new Widget() });
+          await dialog.launch();
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class LabShell {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        interface IOptions {
+          shell: LabShell;
+        }
+
+        class Application {
+          constructor(options: IOptions = { shell: new LabShell() }) {}
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
         declare function cleanup(): void;
         class DisposableDelegate {
           constructor(callback: () => void) {}

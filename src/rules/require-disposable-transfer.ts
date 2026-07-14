@@ -27,16 +27,28 @@ interface RuleOptions {
 }
 
 const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
+  '_adjacentBar',
+  '_currentTabBar',
   'add',
   'addCommand',
+  'addFileType',
   'addGroup',
   'addItem',
   'addKeyBinding',
+  'addWidgetExtension',
+  'contextForWidget',
   'contextMenuWidget',
   'find',
   'get',
+  'getCurrent',
+  'getLanguageServerManager',
+  'getLogger',
+  'getManager',
+  'initializeState',
   'insertCell',
+  'insertTab',
   'register',
+  'registerItem',
   'registerStatusItem',
   'transform'
 ];

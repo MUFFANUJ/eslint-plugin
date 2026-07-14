@@ -29,6 +29,8 @@ It accepts common ownership patterns:
   or disposed
 - Passing it to a configured ownership helper function or default ownership
   sink such as `add`, `addItem`, or `addWidget`
+- Passing it as a `showDialog({ body: ... })` body or launching a typed
+  `Dialog` with `.launch()`
 
 ## Incorrect
 

@@ -389,6 +389,14 @@ function isDisposableSetType(
   node: TSESTree.Node,
   ownership: DisposableOwnershipContext
 ): boolean {
+  return hasExpressionTypeName(node, ownership, DISPOSABLE_SET_NAMES);
+}
+
+function hasExpressionTypeName(
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext,
+  names: readonly string[]
+): boolean {
   if (!ownership.checker || !ownership.services) {
     return false;
   }
@@ -396,7 +404,7 @@ function isDisposableSetType(
   try {
     const tsNode = ownership.services.esTreeNodeToTSNodeMap.get(node);
     const type = ownership.checker.getTypeAtLocation(tsNode);
-    return hasTypeName(type, ownership.checker, DISPOSABLE_SET_NAMES);
+    return hasTypeName(type, ownership.checker, names);
   } catch {
     return false;
   }
@@ -406,17 +414,14 @@ function isAttachedPropertyType(
   node: TSESTree.Node,
   ownership: DisposableOwnershipContext
 ): boolean {
-  if (!ownership.checker || !ownership.services) {
-    return false;
-  }
+  return hasExpressionTypeName(node, ownership, ['AttachedProperty']);
+}
 
-  try {
-    const tsNode = ownership.services.esTreeNodeToTSNodeMap.get(node);
-    const type = ownership.checker.getTypeAtLocation(tsNode);
-    return hasTypeName(type, ownership.checker, ['AttachedProperty']);
-  } catch {
-    return false;
-  }
+function isDialogType(
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): boolean {
+  return hasExpressionTypeName(node, ownership, ['Dialog']);
 }
 
 function isOwnershipAddCall(
@@ -486,6 +491,16 @@ function isArgumentOfCallOrNew(
   return node.type === 'CallExpression' || node.type === 'NewExpression';
 }
 
+function getPropertyName(node: TSESTree.Property): string | null {
+  if (!node.computed && node.key.type === 'Identifier') {
+    return node.key.name;
+  }
+  if (node.key.type === 'Literal' && typeof node.key.value === 'string') {
+    return node.key.value;
+  }
+  return null;
+}
+
 function isOptionsObjectValueManaged(
   expression: TSESTree.Node,
   ownership: DisposableOwnershipContext
@@ -505,6 +520,15 @@ function isOptionsObjectValueManaged(
   }
 
   const parent = object.parent;
+  const propertyName = getPropertyName(property);
+  if (
+    parent?.type === 'AssignmentPattern' &&
+    parent.right === object &&
+    propertyName === 'shell'
+  ) {
+    return true;
+  }
+
   if (!parent || !isArgumentOfCallOrNew(parent)) {
     return false;
   }
@@ -515,6 +539,10 @@ function isOptionsObjectValueManaged(
 
   if (parent.type === 'NewExpression') {
     return true;
+  }
+
+  if (getCalleeName(parent.callee) === 'showDialog') {
+    return propertyName === 'body';
   }
 
   return (
@@ -577,14 +605,33 @@ export function isDisposableExpressionManaged(
   if (
     parent.type === 'MemberExpression' &&
     parent.object === expression &&
-    getStaticMemberName(parent) === 'dispose' &&
     parent.parent?.type === 'CallExpression' &&
     parent.parent.callee === parent
   ) {
-    return true;
+    if (getStaticMemberName(parent) === 'dispose') {
+      return true;
+    }
+    if (
+      getStaticMemberName(parent) === 'launch' &&
+      isDialogType(expression, ownership)
+    ) {
+      return true;
+    }
   }
 
   return false;
+}
+
+function isDialogLaunchCall(
+  node: TSESTree.CallExpression,
+  ownership: DisposableOwnershipContext
+): node is TSESTree.CallExpression & { callee: TSESTree.MemberExpression } {
+  return (
+    isStaticMemberCall(node, 'launch') &&
+    node.callee.type === 'MemberExpression' &&
+    node.callee.object.type !== 'Super' &&
+    isDialogType(node.callee.object, ownership)
+  );
 }
 
 export function markManagedDisposableUse(
@@ -640,6 +687,16 @@ export function markManagedDisposableUse(
       if (isUnconditionalUse(node, variable)) {
         markDisposableManaged(pending, variable);
       }
+    }
+  }
+
+  if (isDialogLaunchCall(node, ownership)) {
+    const variable = getIdentifierVariable(
+      ownership.sourceCode,
+      node.callee.object
+    );
+    if (variable && isUnconditionalUse(node, variable)) {
+      markDisposableManaged(pending, variable);
     }
   }
 }

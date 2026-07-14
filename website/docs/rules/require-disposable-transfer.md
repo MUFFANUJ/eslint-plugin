@@ -29,9 +29,11 @@ It accepts common ownership patterns:
 - Passing it to a configured ownership helper function or default ownership
   sink such as `add`, `addItem`, or `addWidget`
 
-By default, the rule does not report common borrowed-reference or
-registration-return calls such as `get`, `find`, `insertCell`,
-`contextMenuWidget`, `add`, `addCommand`, `addItem`, `registerStatusItem`,
+By default, the rule does not report common borrowed-reference,
+fluent-initializer, or registration-return calls such as `get`, `find`,
+`getCurrent`, `contextForWidget`, `insertCell`, `insertTab`,
+`initializeState`, `contextMenuWidget`, `add`, `addCommand`, `addFileType`,
+`addItem`, `addWidgetExtension`, `registerItem`, `registerStatusItem`,
 `addKeyBinding`, `addGroup`, `register`, `transform`, and `add*Factory`.
 
 ## Incorrect
