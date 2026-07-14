@@ -27,7 +27,8 @@ It accepts common ownership patterns:
 - Calling `.dispose()` immediately
 - Storing it in a variable that is later added, returned, assigned to a field,
   or disposed
-- Passing it to a configured ownership helper function
+- Passing it to a configured ownership helper function or default ownership
+  sink such as `add`, `addItem`, or `addWidget`
 
 ## Incorrect
 
@@ -77,7 +78,10 @@ class Owner {
 
 ### `ownershipFunctionNames`
 
-Additional function or method names that take ownership of disposable arguments.
+Function or method names that take ownership of disposable arguments. The
+default list is `add`, `addFactory`, `addItem`, `addModelFactory`, `addWidget`,
+and `addWidgetFactory`. If provided, this list replaces the default. Set this
+option to `[]` to require stricter typed ownership checks.
 
 ```json
 {

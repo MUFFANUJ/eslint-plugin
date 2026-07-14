@@ -129,6 +129,23 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     {
       filename: typeAwareFilename,
       code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+        declare const shell: {
+          add(disposable: DisposableDelegate): void;
+        };
+
+        shell.add(new DisposableDelegate(() => {
+          cleanup();
+        }));
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
         class DisposableSet {
           dispose(): void {}
         }
@@ -171,6 +188,69 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
           return new DisposableDelegate(() => {
             cleanup();
           });
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+        class Widget {
+          constructor(options: { disposable: DisposableDelegate }) {}
+        }
+
+        new Widget({
+          disposable: new DisposableDelegate(() => {
+            cleanup();
+          })
+        });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+
+        class Owner {
+          private _disposable: DisposableDelegate | null = null;
+
+          initialize(): void {
+            this._disposable =
+              this._disposable ??
+              new DisposableDelegate(() => {
+                cleanup();
+              });
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+        class Base {
+          constructor(options: { disposable: DisposableDelegate }) {}
+        }
+        class Owner extends Base {
+          constructor() {
+            super({
+              disposable: new DisposableDelegate(() => {
+                cleanup();
+              })
+            });
+          }
         }
       `
     },
@@ -508,6 +588,7 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     },
     {
       filename: typeAwareFilename,
+      options: [{ ownershipFunctionNames: [] }],
       code: `
         declare function cleanup(): void;
         class DisposableDelegate {

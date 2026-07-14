@@ -18,6 +18,15 @@ const DISPOSABLE_CONSTRUCTOR_NAMES = [
 
 const DISPOSABLE_SET_NAMES = ['DisposableSet', 'ObservableDisposableSet'];
 
+export const DEFAULT_OWNERSHIP_FUNCTION_NAMES = [
+  'add',
+  'addFactory',
+  'addItem',
+  'addModelFactory',
+  'addWidget',
+  'addWidgetFactory'
+];
+
 interface PendingDisposable {
   node: TSESTree.Node;
 }
@@ -78,6 +87,29 @@ function getOuterExpression(node: TSESTree.Node): TSESTree.Node {
     if (child !== current) {
       break;
     }
+    current = parent;
+    parent = current.parent;
+  }
+  return current;
+}
+
+function isFallbackExpression(
+  node: TSESTree.Node
+): node is TSESTree.LogicalExpression {
+  return (
+    node.type === 'LogicalExpression' &&
+    (node.operator === '||' || node.operator === '??')
+  );
+}
+
+function getOuterFallbackExpression(node: TSESTree.Node): TSESTree.Node {
+  let current = getOuterExpression(node);
+  let parent = current.parent;
+  while (
+    parent &&
+    isFallbackExpression(parent) &&
+    (parent.left === current || parent.right === current)
+  ) {
     current = parent;
     parent = current.parent;
   }
@@ -197,6 +229,42 @@ function getIdentifierVariable(
   return null;
 }
 
+function getIdentifierVariables(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node | null | undefined
+): TSESLint.Scope.Variable[] {
+  const variable = getIdentifierVariable(sourceCode, node);
+  if (variable) {
+    return [variable];
+  }
+  if (!node) {
+    return [];
+  }
+
+  const child = getTransparentChild(node);
+  if (child) {
+    return getIdentifierVariables(sourceCode, child);
+  }
+
+  if (node.type === 'ArrayExpression') {
+    return node.elements.flatMap(element =>
+      element && element.type !== 'SpreadElement'
+        ? getIdentifierVariables(sourceCode, element)
+        : []
+    );
+  }
+
+  if (node.type === 'ObjectExpression') {
+    return node.properties.flatMap(property =>
+      property.type === 'Property'
+        ? getIdentifierVariables(sourceCode, property.value)
+        : []
+    );
+  }
+
+  return [];
+}
+
 export function addPendingDisposable(
   pending: PendingDisposableMap,
   variable: TSESLint.Scope.Variable,
@@ -229,7 +297,7 @@ export function getAssignedVariable(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode
 ): TSESLint.Scope.Variable | null {
-  const expression = getOuterExpression(node);
+  const expression = getOuterFallbackExpression(node);
   const parent = expression.parent;
   if (!parent) {
     return null;
@@ -389,6 +457,10 @@ function getOwnershipArguments(
   node: TSESTree.CallExpression,
   ownership: DisposableOwnershipContext
 ): TSESTree.CallExpressionArgument[] {
+  if (node.callee.type === 'Super') {
+    return node.arguments;
+  }
+
   if (isOwnershipAddCall(node, ownership)) {
     return node.arguments;
   }
@@ -408,11 +480,56 @@ function getOwnershipArguments(
   return [];
 }
 
+function isArgumentOfCallOrNew(
+  node: TSESTree.Node
+): node is TSESTree.CallExpression | TSESTree.NewExpression {
+  return node.type === 'CallExpression' || node.type === 'NewExpression';
+}
+
+function isOptionsObjectValueManaged(
+  expression: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): boolean {
+  const property = expression.parent;
+  if (
+    !property ||
+    property.type !== 'Property' ||
+    property.value !== expression
+  ) {
+    return false;
+  }
+
+  const object = property.parent;
+  if (!object || object.type !== 'ObjectExpression') {
+    return false;
+  }
+
+  const parent = object.parent;
+  if (!parent || !isArgumentOfCallOrNew(parent)) {
+    return false;
+  }
+
+  if (!parent.arguments.includes(object as TSESTree.CallExpressionArgument)) {
+    return false;
+  }
+
+  if (parent.type === 'NewExpression') {
+    return true;
+  }
+
+  return (
+    parent.callee.type === 'Super' ||
+    getOwnershipArguments(parent, ownership).includes(
+      object as TSESTree.CallExpressionArgument
+    )
+  );
+}
+
 export function isDisposableExpressionManaged(
   node: TSESTree.Node,
   ownership: DisposableOwnershipContext
 ): boolean {
-  const expression = getOuterExpression(node);
+  const expression = getOuterFallbackExpression(node);
   const parent = expression.parent;
   if (!parent) {
     return false;
@@ -451,6 +568,10 @@ export function isDisposableExpressionManaged(
     return getOwnershipArguments(parent.parent, ownership).includes(
       expression as TSESTree.CallExpressionArgument
     );
+  }
+
+  if (isOptionsObjectValueManaged(expression, ownership)) {
+    return true;
   }
 
   if (
@@ -496,9 +617,11 @@ export function markManagedDisposableUse(
   const ownershipArguments = getOwnershipArguments(node, ownership);
   if (ownershipArguments.length > 0) {
     for (const argument of ownershipArguments) {
-      const variable = getIdentifierVariable(ownership.sourceCode, argument);
-      if (variable && isUnconditionalUse(node, variable)) {
-        markDisposableManaged(pending, variable);
+      const variables = getIdentifierVariables(ownership.sourceCode, argument);
+      for (const variable of variables) {
+        if (isUnconditionalUse(node, variable)) {
+          markDisposableManaged(pending, variable);
+        }
       }
     }
     return;
@@ -615,7 +738,7 @@ export function isDisposableType(
 export function shouldCheckReturnedDisposable(
   node: TSESTree.CallExpression
 ): boolean {
-  const expression = getOuterExpression(node);
+  const expression = getOuterFallbackExpression(node);
   const parent = expression.parent;
   if (!parent) {
     return false;

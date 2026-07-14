@@ -139,6 +139,24 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         }
         declare function createDisposable(): IDisposable;
 
+        class Owner {
+          private _disposable: IDisposable | null = null;
+
+          initialize(): void {
+            this._disposable = this._disposable || createDisposable();
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+
         createDisposable().dispose();
       `
     },
@@ -175,6 +193,22 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
 
         const disposable = createDisposable();
         disposables.add(disposable);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare const shell: {
+          add(disposable: IDisposable): void;
+        };
+
+        const disposable = createDisposable();
+        shell.add(disposable);
       `
     },
     {
@@ -236,6 +270,82 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
     },
     {
       filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const store: {
+          get(key: string): IDisposable;
+        };
+
+        const current = store.get('current');
+        console.log(current);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const commands: {
+          addCommand(id: string, options: object): IDisposable;
+        };
+
+        commands.addCommand('example:command', {});
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const registry: {
+          add(id: string): IDisposable;
+        };
+
+        registry.add('example');
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const toolbarRegistry: {
+          addToolbarFactory(name: string): IDisposable;
+        };
+
+        toolbarRegistry.addToolbarFactory('example');
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        class Base {
+          constructor(options: { disposable: IDisposable }) {}
+        }
+        class Owner extends Base {
+          constructor() {
+            const disposable = createDisposable();
+            super({ disposable });
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
       options: [{ ownershipFunctionNames: ['ownDisposable'] }],
       code: `
         interface IDisposable {
@@ -274,6 +384,69 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         {
           messageId: 'unhandledDisposable',
           data: { name: 'createDisposable' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      options: [{ ignoredReturnFunctionNames: [] }],
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const registry: {
+          add(id: string): IDisposable;
+        };
+
+        registry.add('example');
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'add' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      options: [{ ignoredReturnFunctionNames: [] }],
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const commands: {
+          addCommand(id: string, options: object): IDisposable;
+        };
+
+        commands.addCommand('example:command', {});
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'addCommand' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      options: [{ ignoredReturnFunctionNames: [] }],
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const toolbarRegistry: {
+          addToolbarFactory(name: string): IDisposable;
+        };
+
+        toolbarRegistry.addToolbarFactory('example');
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'addToolbarFactory' }
         }
       ]
     },
@@ -405,6 +578,7 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
     },
     {
       filename: typeAwareFilename,
+      options: [{ ownershipFunctionNames: [] }],
       code: `
         interface IDisposable {
           readonly isDisposed: boolean;

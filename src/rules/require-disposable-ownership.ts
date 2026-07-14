@@ -9,6 +9,7 @@ import * as ts from 'typescript';
 import { createRule } from '../utils/create-rule';
 import {
   addPendingDisposable,
+  DEFAULT_OWNERSHIP_FUNCTION_NAMES,
   DisposableOwnershipContext,
   getAssignedVariable,
   isDisposableConstructor,
@@ -44,9 +45,9 @@ const requireDisposableOwnership = createRule({
           ownershipFunctionNames: {
             type: 'array',
             items: { type: 'string' },
-            default: [],
+            default: DEFAULT_OWNERSHIP_FUNCTION_NAMES,
             description:
-              'Additional function or method names that take ownership of a disposable argument.'
+              'Function or method names that take ownership of a disposable argument.'
           }
         },
         additionalProperties: false
@@ -87,7 +88,8 @@ const requireDisposableOwnership = createRule({
       checker,
       services,
       ownershipFunctionNames: new Set(
-        (options as RuleOptions).ownershipFunctionNames ?? []
+        (options as RuleOptions).ownershipFunctionNames ??
+          DEFAULT_OWNERSHIP_FUNCTION_NAMES
       )
     };
 

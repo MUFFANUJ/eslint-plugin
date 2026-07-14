@@ -9,6 +9,7 @@ import * as ts from 'typescript';
 import { createRule } from '../utils/create-rule';
 import {
   addPendingDisposable,
+  DEFAULT_OWNERSHIP_FUNCTION_NAMES,
   DisposableOwnershipContext,
   getAssignedVariable,
   getCalleeName,
@@ -21,7 +22,27 @@ import {
 } from '../utils/disposables';
 
 interface RuleOptions {
+  ignoredReturnFunctionNames?: string[];
   ownershipFunctionNames?: string[];
+}
+
+const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
+  'add',
+  'addCommand',
+  'addGroup',
+  'addItem',
+  'addKeyBinding',
+  'contextMenuWidget',
+  'find',
+  'get',
+  'insertCell',
+  'register',
+  'registerStatusItem',
+  'transform'
+];
+
+function isDefaultIgnoredFactoryReturnFunctionName(name: string): boolean {
+  return /^add[A-Za-z0-9_$]*Factory$/.test(name);
 }
 
 const requireDisposableTransfer = createRule({
@@ -46,9 +67,16 @@ const requireDisposableTransfer = createRule({
           ownershipFunctionNames: {
             type: 'array',
             items: { type: 'string' },
-            default: [],
+            default: DEFAULT_OWNERSHIP_FUNCTION_NAMES,
             description:
-              'Additional function or method names that take ownership of a disposable argument.'
+              'Function or method names that take ownership of a disposable argument.'
+          },
+          ignoredReturnFunctionNames: {
+            type: 'array',
+            items: { type: 'string' },
+            default: DEFAULT_IGNORED_RETURN_FUNCTION_NAMES,
+            description:
+              'Function or method names whose disposable return value is intentionally ignored.'
           }
         },
         additionalProperties: false
@@ -87,12 +115,31 @@ const requireDisposableTransfer = createRule({
       }
     }
 
+    const ignoredReturnFunctionNamesOption = (options as RuleOptions)
+      .ignoredReturnFunctionNames;
+    const ignoredReturnFunctionNames = new Set(
+      ignoredReturnFunctionNamesOption ?? DEFAULT_IGNORED_RETURN_FUNCTION_NAMES
+    );
+
+    function isIgnoredReturn(node: TSESTree.CallExpression): boolean {
+      const name = getCalleeName(node.callee);
+      if (!name) {
+        return false;
+      }
+      return (
+        ignoredReturnFunctionNames.has(name) ||
+        (ignoredReturnFunctionNamesOption === undefined &&
+          isDefaultIgnoredFactoryReturnFunctionName(name))
+      );
+    }
+
     const ownership: DisposableOwnershipContext = {
       sourceCode: context.sourceCode,
       checker,
       services,
       ownershipFunctionNames: new Set(
-        (options as RuleOptions).ownershipFunctionNames ?? []
+        (options as RuleOptions).ownershipFunctionNames ??
+          DEFAULT_OWNERSHIP_FUNCTION_NAMES
       )
     };
 
@@ -101,6 +148,7 @@ const requireDisposableTransfer = createRule({
         markManagedDisposableUse(pending, node, ownership);
 
         if (
+          isIgnoredReturn(node) ||
           !shouldCheckReturnedDisposable(node) ||
           isDisposableExpressionManaged(node, ownership)
         ) {
