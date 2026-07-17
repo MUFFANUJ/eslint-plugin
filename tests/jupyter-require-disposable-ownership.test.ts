@@ -217,9 +217,41 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
           readonly isDisposed = false;
           dispose(): void {}
         }
+        class MainAreaWidget {
+          readonly isDisposed = false;
+          constructor(options: { content: Widget }) {}
+          dispose(): void {}
+        }
+
+        function createMainAreaWidget(): MainAreaWidget {
+          const content = new Widget();
+          return new MainAreaWidget({ content });
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
         declare function showDialog(options: { body: Widget }): void;
 
         showDialog({ body: new Widget() });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare function showDialog(options: { body: Widget }): void;
+
+        const body = new Widget();
+        showDialog({ body });
       `
     },
     {
@@ -242,6 +274,36 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
           const dialog = new Dialog({ body: new Widget() });
           await dialog.launch();
         }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class StatusItem {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare const statusBar: {
+          registerStatusItem(id: string, options: { item: StatusItem }): void;
+        };
+
+        const item = new StatusItem();
+        statusBar.registerStatusItem('status', { item });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare const layout: {
+          insertWidget(index: number, widget: Widget): void;
+        };
+
+        const widget = new Widget();
+        layout.insertWidget(0, widget);
       `
     },
     {

@@ -29,27 +29,45 @@ interface RuleOptions {
 const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
   '_adjacentBar',
   '_currentTabBar',
+  '_handleNewSession',
   'add',
   'addCommand',
+  'addCommandToolbarButtonClass',
   'addFileType',
   'addGroup',
   'addItem',
   'addKeyBinding',
+  'addToolbarButtonClass',
   'addWidgetExtension',
   'contextForWidget',
   'contextMenuWidget',
+  'defaultWidgetFactory',
   'find',
+  'findWidget',
   'get',
   'getCurrent',
   'getLanguageServerManager',
   'getLogger',
   'getManager',
+  'getModelFactory',
+  'getWidgetFactory',
   'initializeState',
   'insertCell',
+  'insertItem',
   'insertTab',
+  'openInspector',
+  'openOrReveal',
+  'pop',
+  'popLastModifiedCell',
   'register',
   'registerItem',
   'registerStatusItem',
+  'requestCreateSubshell',
+  'requestDebug',
+  'requestDeleteSubshell',
+  'shift',
+  'widgetAt',
+  'widgetRenderer',
   'transform'
 ];
 
@@ -189,6 +207,10 @@ const requireDisposableTransfer = createRule({
       },
 
       AssignmentExpression(node) {
+        markManagedDisposableUse(pending, node, ownership);
+      },
+
+      NewExpression(node) {
         markManagedDisposableUse(pending, node, ownership);
       },
 

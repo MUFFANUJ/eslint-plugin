@@ -20,11 +20,16 @@ const DISPOSABLE_SET_NAMES = ['DisposableSet', 'ObservableDisposableSet'];
 
 export const DEFAULT_OWNERSHIP_FUNCTION_NAMES = [
   'add',
+  'addCell',
   'addFactory',
   'addItem',
   'addModelFactory',
+  'addSibling',
   'addWidget',
-  'addWidgetFactory'
+  'addWidgetFactory',
+  'insertItem',
+  'insertWidget',
+  'registerStatusItem'
 ];
 
 interface PendingDisposable {
@@ -634,6 +639,19 @@ function isDialogLaunchCall(
   );
 }
 
+function markManagedVariables(
+  pending: PendingDisposableMap,
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): void {
+  const variables = getIdentifierVariables(ownership.sourceCode, node);
+  for (const variable of variables) {
+    if (isUnconditionalUse(node, variable)) {
+      markDisposableManaged(pending, variable);
+    }
+  }
+}
+
 export function markManagedDisposableUse(
   pending: PendingDisposableMap,
   node: TSESTree.Node,
@@ -657,19 +675,32 @@ export function markManagedDisposableUse(
     return;
   }
 
-  if (node.type !== 'CallExpression') {
+  if (node.type !== 'CallExpression' && node.type !== 'NewExpression') {
+    return;
+  }
+
+  for (const argument of node.arguments) {
+    if (argument.type !== 'ObjectExpression') {
+      continue;
+    }
+    for (const property of argument.properties) {
+      if (
+        property.type === 'Property' &&
+        isOptionsObjectValueManaged(property.value, ownership)
+      ) {
+        markManagedVariables(pending, property.value, ownership);
+      }
+    }
+  }
+
+  if (node.type === 'NewExpression') {
     return;
   }
 
   const ownershipArguments = getOwnershipArguments(node, ownership);
   if (ownershipArguments.length > 0) {
     for (const argument of ownershipArguments) {
-      const variables = getIdentifierVariables(ownership.sourceCode, argument);
-      for (const variable of variables) {
-        if (isUnconditionalUse(node, variable)) {
-          markDisposableManaged(pending, variable);
-        }
-      }
+      markManagedVariables(pending, argument, ownership);
     }
     return;
   }

@@ -203,6 +203,105 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           dispose(): void;
         }
         declare function createDisposable(): IDisposable;
+        class MainAreaWidget {
+          constructor(options: { content: IDisposable }) {}
+          dispose(): void {}
+        }
+
+        const content = createDisposable();
+        new MainAreaWidget({ content }).dispose();
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare function showDialog(options: { body: IDisposable }): void;
+
+        const body = createDisposable();
+        showDialog({ body });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare const statusBar: {
+          registerStatusItem(
+            id: string,
+            options: { item: IDisposable }
+          ): IDisposable;
+        };
+
+        const item = createDisposable();
+        statusBar.registerStatusItem('status', { item });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare const layout: {
+          insertWidget(index: number, widget: IDisposable): void;
+        };
+
+        const widget = createDisposable();
+        layout.insertWidget(0, widget);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const widgets: IDisposable[];
+        declare const owner: {
+          addWidget(widget: IDisposable): void;
+        };
+
+        const widget = widgets.pop();
+        if (widget) {
+          owner.addWidget(widget);
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const manager: {
+          findWidget(path: string): IDisposable | undefined;
+        };
+
+        const widget = manager.findWidget('path');
+        console.log(widget);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
         declare const shell: {
           add(disposable: IDisposable): void;
         };

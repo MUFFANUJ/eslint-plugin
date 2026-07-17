@@ -107,6 +107,8 @@ const requireDisposableOwnership = createRule({
       },
 
       NewExpression(node) {
+        markManagedDisposableUse(pending, node, ownership);
+
         if (!isDisposableCreation(node)) {
           return;
         }
