@@ -24,14 +24,15 @@ It accepts common ownership patterns:
   `ObservableDisposableSet.from(...)`
 - Returning it
 - Assigning it to an object field or class field initializer
+- Storing it in a class-field collection with `this._items.set(...)`
 - Calling `.dispose()` immediately
 - Storing it in a variable that is later added, returned, assigned to a field,
   or disposed
 - Passing it to a configured ownership helper function or default ownership
-  sink such as `add`, `addCell`, `addItem`, `addWidget`, `insertWidget`,
-  or `registerStatusItem`
-- Passing it through an owned constructor options object, such as
-  `new MainAreaWidget({ content })`
+  sink such as `add`, `addCell`, `addItem`, `addMenu`, `addWidget`,
+  `insertWidget`, or `registerStatusItem`
+- Passing it through a known owned constructor options object, such as
+  `new MainAreaWidget({ content })` or `new Dialog({ body })`
 - Passing it as a `showDialog({ body: ... })` body or launching a typed
   `Dialog` with `.launch()`
 
@@ -85,9 +86,9 @@ class Owner {
 
 Function or method names that take ownership of disposable arguments. The
 default list is `add`, `addCell`, `addFactory`, `addItem`, `addModelFactory`,
-`addSibling`, `addWidget`, `addWidgetFactory`, `insertItem`, `insertWidget`,
-and `registerStatusItem`. If provided, this list replaces the default. Set this
-option to `[]` to require stricter typed ownership checks.
+`addSibling`, `addMenu`, `addWidget`, `addWidgetFactory`, `insertItem`,
+`insertWidget`, and `registerStatusItem`. If provided, this list replaces the
+default. Set this option to `[]` to require stricter typed ownership checks.
 
 ```json
 {

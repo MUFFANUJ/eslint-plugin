@@ -15,6 +15,7 @@ import {
   isDisposableConstructor,
   isDisposableExpressionManaged,
   isDisposableType,
+  isOuterFunctionScopeVariable,
   markManagedDisposableUse,
   PendingDisposableMap
 } from '../utils/disposables';
@@ -115,6 +116,15 @@ const requireDisposableOwnership = createRule({
 
         const assignedVariable = getAssignedVariable(node, context.sourceCode);
         if (assignedVariable) {
+          if (
+            isOuterFunctionScopeVariable(
+              node,
+              assignedVariable,
+              context.sourceCode
+            )
+          ) {
+            return;
+          }
           addPendingDisposable(pending, assignedVariable, node);
           return;
         }

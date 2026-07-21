@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'rules/index',
         'rules/command-described-by',
+        'rules/incorrect-translator-usage',
         'rules/no-pageconfig-base-url',
         'rules/no-schema-enum',
         'rules/no-translation-concatenation',

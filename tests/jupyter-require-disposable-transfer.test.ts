@@ -301,6 +301,19 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           readonly isDisposed: boolean;
           dispose(): void;
         }
+        declare function _findWidgetByID(id: string): IDisposable | undefined;
+
+        const widget = _findWidgetByID('main');
+        console.log(widget);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
         declare function createDisposable(): IDisposable;
         declare const shell: {
           add(disposable: IDisposable): void;
@@ -417,6 +430,24 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           readonly isDisposed: boolean;
           dispose(): void;
         }
+        declare const docManager: {
+          open(path: string): IDisposable;
+        };
+        declare const tabBar: {
+          addTab(title: object): IDisposable;
+        };
+
+        docManager.open('index.ipynb');
+        tabBar.addTab({});
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
         declare function getCurrent(): IDisposable | null;
         declare function getManager(): IDisposable;
         declare function contextForWidget(widget: object): IDisposable | undefined;
@@ -473,6 +504,47 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         registry.addWidgetExtension('cell');
         registry.registerItem('status');
         tabs.insertTab(0);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare function createMap(): {
+          set(id: string, disposable: IDisposable): IDisposable;
+          delete(id: string): IDisposable;
+        };
+
+        class Store {
+          private _items = createMap();
+
+          add(): void {
+            const item = createDisposable();
+            this._items.set('item', item);
+            this._items.delete('item');
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+
+        let current: IDisposable | null = null;
+        function update(): void {
+          current = createDisposable();
+        }
+        update();
+        console.log(current);
       `
     },
     {
@@ -567,6 +639,55 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         {
           messageId: 'unhandledDisposable',
           data: { name: 'createDisposable' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const item: IDisposable;
+        declare const values: {
+          set(id: string, item: IDisposable): IDisposable;
+        };
+
+        values.set('item', item);
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'set' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      options: [{ ignoredReturnFunctionNames: [] }],
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const item: IDisposable;
+        declare function createMap(): {
+          set(id: string, item: IDisposable): IDisposable;
+        };
+
+        class Store {
+          private _items = createMap();
+
+          add(): void {
+            this._items.set('item', item);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unhandledDisposable',
+          data: { name: 'set' }
         }
       ]
     },

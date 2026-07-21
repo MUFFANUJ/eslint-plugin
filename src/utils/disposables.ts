@@ -18,11 +18,17 @@ const DISPOSABLE_CONSTRUCTOR_NAMES = [
 
 const DISPOSABLE_SET_NAMES = ['DisposableSet', 'ObservableDisposableSet'];
 
+const OWNED_CONSTRUCTOR_OPTION_NAMES = new Map([
+  ['Dialog', ['body']],
+  ['MainAreaWidget', ['content']]
+]);
+
 export const DEFAULT_OWNERSHIP_FUNCTION_NAMES = [
   'add',
   'addCell',
   'addFactory',
   'addItem',
+  'addMenu',
   'addModelFactory',
   'addSibling',
   'addWidget',
@@ -98,6 +104,17 @@ function getOuterExpression(node: TSESTree.Node): TSESTree.Node {
   return current;
 }
 
+function isThisMemberExpression(node: TSESTree.Node): boolean {
+  const expression = getOuterExpression(node);
+  if (expression.type === 'ThisExpression') {
+    return true;
+  }
+  if (expression.type !== 'MemberExpression') {
+    return false;
+  }
+  return isThisMemberExpression(expression.object);
+}
+
 function isFallbackExpression(
   node: TSESTree.Node
 ): node is TSESTree.LogicalExpression {
@@ -166,6 +183,11 @@ function isLikelyDisposableProperty(node: TSESTree.Node): boolean {
 export function isDisposableConstructor(node: TSESTree.NewExpression): boolean {
   const name = getCalleeName(node.callee);
   return name !== null && DISPOSABLE_CONSTRUCTOR_NAMES.includes(name);
+}
+
+function isDisposableSetConstructor(node: TSESTree.NewExpression): boolean {
+  const name = getCalleeName(node.callee);
+  return name !== null && DISPOSABLE_SET_NAMES.includes(name);
 }
 
 export function isDisposableSetFactoryCall(node: TSESTree.Node): boolean {
@@ -298,6 +320,21 @@ function markDisposableManaged(
   }
 }
 
+function hasPendingDisposableSet(
+  pending: PendingDisposableMap,
+  variable: TSESLint.Scope.Variable
+): boolean {
+  return (
+    pending.get(variable)?.some(record => {
+      const node = record.node;
+      return (
+        (node.type === 'NewExpression' && isDisposableSetConstructor(node)) ||
+        isDisposableSetFactoryCall(node)
+      );
+    }) ?? false
+  );
+}
+
 export function getAssignedVariable(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode
@@ -367,6 +404,54 @@ function isUnconditionalUse(
   }
 
   return false;
+}
+
+function isCatchClauseUse(
+  node: TSESTree.Node,
+  variable: TSESLint.Scope.Variable
+): boolean {
+  const scopeBlock = variable.scope.block;
+  let parent = node.parent;
+
+  while (parent) {
+    if (parent === scopeBlock) {
+      return false;
+    }
+    if (parent.type === 'CatchClause') {
+      return true;
+    }
+    parent = parent.parent;
+  }
+
+  return false;
+}
+
+function getFunctionScope(
+  scope: TSESLint.Scope.Scope | null
+): TSESLint.Scope.Scope | null {
+  let current = scope;
+  while (current) {
+    if (
+      current.type === 'function' ||
+      current.type === 'module' ||
+      current.type === 'global'
+    ) {
+      return current;
+    }
+    current = current.upper;
+  }
+  return null;
+}
+
+export function isOuterFunctionScopeVariable(
+  node: TSESTree.Node,
+  variable: TSESLint.Scope.Variable,
+  sourceCode: TSESLint.SourceCode
+): boolean {
+  return (
+    getFunctionScope(sourceCode.getScope(node)) !==
+    getFunctionScope(variable.scope)
+  );
 }
 
 function hasTypeName(
@@ -463,6 +548,17 @@ function isOwnershipSetCall(
   );
 }
 
+export function isClassFieldCollectionMutationCall(
+  node: TSESTree.CallExpression,
+  names: readonly string[]
+): boolean {
+  return (
+    node.callee.type === 'MemberExpression' &&
+    names.includes(getStaticMemberName(node.callee) ?? '') &&
+    isThisMemberExpression(node.callee.object)
+  );
+}
+
 function getOwnershipArguments(
   node: TSESTree.CallExpression,
   ownership: DisposableOwnershipContext
@@ -484,6 +580,10 @@ function getOwnershipArguments(
   }
 
   if (isOwnershipSetCall(node, ownership)) {
+    return node.arguments.slice(1);
+  }
+
+  if (isClassFieldCollectionMutationCall(node, ['set'])) {
     return node.arguments.slice(1);
   }
 
@@ -543,7 +643,15 @@ function isOptionsObjectValueManaged(
   }
 
   if (parent.type === 'NewExpression') {
-    return true;
+    const constructorName = getCalleeName(parent.callee);
+    return (
+      constructorName !== null &&
+      propertyName !== null &&
+      (OWNED_CONSTRUCTOR_OPTION_NAMES.get(constructorName)?.includes(
+        propertyName
+      ) ??
+        false)
+    );
   }
 
   if (getCalleeName(parent.callee) === 'showDialog') {
@@ -642,11 +750,15 @@ function isDialogLaunchCall(
 function markManagedVariables(
   pending: PendingDisposableMap,
   node: TSESTree.Node,
-  ownership: DisposableOwnershipContext
+  ownership: DisposableOwnershipContext,
+  requireUnconditional = true
 ): void {
   const variables = getIdentifierVariables(ownership.sourceCode, node);
   for (const variable of variables) {
-    if (isUnconditionalUse(node, variable)) {
+    const shouldMark = requireUnconditional
+      ? isUnconditionalUse(node, variable)
+      : !isCatchClauseUse(node, variable);
+    if (shouldMark) {
       markDisposableManaged(pending, variable);
     }
   }
@@ -688,7 +800,7 @@ export function markManagedDisposableUse(
         property.type === 'Property' &&
         isOptionsObjectValueManaged(property.value, ownership)
       ) {
-        markManagedVariables(pending, property.value, ownership);
+        markManagedVariables(pending, property.value, ownership, false);
       }
     }
   }
@@ -700,7 +812,7 @@ export function markManagedDisposableUse(
   const ownershipArguments = getOwnershipArguments(node, ownership);
   if (ownershipArguments.length > 0) {
     for (const argument of ownershipArguments) {
-      markManagedVariables(pending, argument, ownership);
+      markManagedVariables(pending, argument, ownership, false);
     }
     return;
   }
@@ -715,7 +827,11 @@ export function markManagedDisposableUse(
       node.callee.object
     );
     if (variable) {
-      if (isUnconditionalUse(node, variable)) {
+      if (
+        isUnconditionalUse(node, variable) ||
+        (hasPendingDisposableSet(pending, variable) &&
+          !isCatchClauseUse(node, variable))
+      ) {
         markDisposableManaged(pending, variable);
       }
     }

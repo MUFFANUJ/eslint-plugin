@@ -45,7 +45,8 @@ function makeProjectConfig(projectName) {
       'jupyter/token-format': 'error',
       'jupyter/require-soft-assertions-before-snapshots': 'error',
       'jupyter/require-disposable-ownership': 'error',
-      'jupyter/require-disposable-transfer': 'error'
+      'jupyter/require-disposable-transfer': 'error',
+      'jupyter/incorrect-translator-usage': 'error'
     },
     languageOptions: {
       parser: resolvedParser,
@@ -57,6 +58,20 @@ function makeProjectConfig(projectName) {
     },
     linterOptions: {
       reportUnusedDisableDirectives: 'off'
+    }
+  };
+}
+
+function makeExtensionAdoptionConfig(projectName) {
+  return {
+    basePath: __dirname,
+    files: [
+      `${projectName}/packages/*-extension/src/**/*.ts`,
+      `${projectName}/packages/*-extension/src/**/*.tsx`
+    ],
+    rules: {
+      'jupyter/require-disposable-ownership': 'warn',
+      'jupyter/require-disposable-transfer': 'warn'
     }
   };
 }
@@ -122,5 +137,6 @@ const projects = ['jupyterlab', 'notebook', 'jupyterlite'];
 
 export default [
   ...projects.map(makeProjectConfig),
+  ...projects.map(makeExtensionAdoptionConfig),
   ...projects.flatMap(makeTestConfig)
 ]

@@ -13,9 +13,11 @@ import {
   DisposableOwnershipContext,
   getAssignedVariable,
   getCalleeName,
+  isClassFieldCollectionMutationCall,
   isDisposableExpressionManaged,
   isDisposableSetFactoryCall,
   isDisposableType,
+  isOuterFunctionScopeVariable,
   markManagedDisposableUse,
   PendingDisposableMap,
   shouldCheckReturnedDisposable
@@ -29,8 +31,10 @@ interface RuleOptions {
 const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
   '_adjacentBar',
   '_currentTabBar',
+  '_findWidgetByID',
   '_handleNewSession',
   'add',
+  'addTab',
   'addCommand',
   'addCommandToolbarButtonClass',
   'addFileType',
@@ -55,6 +59,7 @@ const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
   'insertCell',
   'insertItem',
   'insertTab',
+  'open',
   'openInspector',
   'openOrReveal',
   'pop',
@@ -152,6 +157,13 @@ const requireDisposableTransfer = createRule({
     );
 
     function isIgnoredReturn(node: TSESTree.CallExpression): boolean {
+      if (
+        ignoredReturnFunctionNamesOption === undefined &&
+        isClassFieldCollectionMutationCall(node, ['delete', 'set'])
+      ) {
+        return true;
+      }
+
       const name = getCalleeName(node.callee);
       if (!name) {
         return false;
@@ -191,6 +203,15 @@ const requireDisposableTransfer = createRule({
 
         const assignedVariable = getAssignedVariable(node, context.sourceCode);
         if (assignedVariable) {
+          if (
+            isOuterFunctionScopeVariable(
+              node,
+              assignedVariable,
+              context.sourceCode
+            )
+          ) {
+            return;
+          }
           addPendingDisposable(pending, assignedVariable, node);
           return;
         }

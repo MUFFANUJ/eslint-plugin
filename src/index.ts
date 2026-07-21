@@ -15,6 +15,7 @@ import requireSoftAssertionsBeforeSnapshots from './rules/require-soft-assertion
 import noPageconfigBaseUrl from './rules/no-pageconfig-base-url';
 import requireDisposableOwnership from './rules/require-disposable-ownership';
 import requireDisposableTransfer from './rules/require-disposable-transfer';
+import incorrectTranslatorUsage from './rules/incorrect-translator-usage';
 
 const plugin = {
   rules: {
@@ -29,7 +30,8 @@ const plugin = {
       requireSoftAssertionsBeforeSnapshots,
     'no-pageconfig-base-url': noPageconfigBaseUrl,
     'require-disposable-ownership': requireDisposableOwnership,
-    'require-disposable-transfer': requireDisposableTransfer
+    'require-disposable-transfer': requireDisposableTransfer,
+    'incorrect-translator-usage': incorrectTranslatorUsage
   },
   configs: {
     recommended: [
@@ -44,7 +46,8 @@ const plugin = {
           'jupyter/no-untranslated-string': 'warn',
           'jupyter/no-pageconfig-base-url': 'warn',
           'jupyter/require-disposable-ownership': 'warn',
-          'jupyter/require-disposable-transfer': 'warn'
+          'jupyter/require-disposable-transfer': 'warn',
+          'jupyter/incorrect-translator-usage': 'warn'
         }
       },
       {
@@ -72,7 +75,8 @@ const plugin = {
         'jupyter/no-schema-enum': 'warn',
         'jupyter/no-pageconfig-base-url': 'warn',
         'jupyter/require-disposable-ownership': 'warn',
-        'jupyter/require-disposable-transfer': 'warn'
+        'jupyter/require-disposable-transfer': 'warn',
+        'jupyter/incorrect-translator-usage': 'warn'
       },
       overrides: [
         {

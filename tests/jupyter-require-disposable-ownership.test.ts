@@ -194,25 +194,6 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     {
       filename: typeAwareFilename,
       code: `
-        declare function cleanup(): void;
-        class DisposableDelegate {
-          constructor(callback: () => void) {}
-          dispose(): void {}
-        }
-        class Widget {
-          constructor(options: { disposable: DisposableDelegate }) {}
-        }
-
-        new Widget({
-          disposable: new DisposableDelegate(() => {
-            cleanup();
-          })
-        });
-      `
-    },
-    {
-      filename: typeAwareFilename,
-      code: `
         class Widget {
           readonly isDisposed = false;
           dispose(): void {}
@@ -304,6 +285,96 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
 
         const widget = new Widget();
         layout.insertWidget(0, widget);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Menu {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        class MenuBar {
+          addMenu(menu: Menu): void {}
+        }
+
+        const menu = new Menu();
+        const menubar = new MenuBar();
+        menubar.addMenu(menu);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare const condition: boolean;
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare const shell: {
+          add(widget: Widget): void;
+        };
+
+        const widget = new Widget();
+        if (condition) {
+          shell.add(widget);
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+
+        class Owner {
+          private _widgets = new Map<string, Widget>();
+
+          addWidget(): void {
+            const widget = new Widget();
+            this._widgets.set('widget', widget);
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        class DisposableSet {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare function defer(callback: () => void): void;
+
+        const set = new DisposableSet();
+        defer(() => {
+          set.dispose();
+        });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+
+        function activate(): void {
+          let current: DisposableDelegate | null = null;
+
+          const createCurrent = () => {
+            current = new DisposableDelegate(() => {
+              cleanup();
+            });
+          };
+
+          createCurrent();
+          console.log(current);
+        }
       `
     },
     {
@@ -515,6 +586,26 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
 
         new DisposableDelegate(() => {
           cleanup();
+        });
+      `,
+      errors: [{ messageId: 'unmanagedDisposable' }]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare function cleanup(): void;
+        class DisposableDelegate {
+          constructor(callback: () => void) {}
+          dispose(): void {}
+        }
+        class Widget {
+          constructor(options: { disposable: DisposableDelegate }) {}
+        }
+
+        new Widget({
+          disposable: new DisposableDelegate(() => {
+            cleanup();
+          })
         });
       `,
       errors: [{ messageId: 'unmanagedDisposable' }]
