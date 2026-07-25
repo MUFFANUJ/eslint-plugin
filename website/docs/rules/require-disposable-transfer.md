@@ -10,10 +10,13 @@ Ignoring the returned value usually means the cleanup path has been lost.
 
 ## Rule details
 
-This rule checks call expressions whose return type is compatible with
-`IDisposable` or `IObservableDisposable` when TypeScript type information is
-available. It also recognizes the known Lumino factories
-`DisposableSet.from(...)` and `ObservableDisposableSet.from(...)`.
+This rule checks factory-like call expressions such as `create*`, `make*`,
+`build*`, and `new*` whose return type is compatible with `IDisposable` or
+`IObservableDisposable` when TypeScript type information is available. It also
+recognizes the known Lumino factories `DisposableSet.from(...)` and
+`ObservableDisposableSet.from(...)`. It ignores disposable values created
+directly inside a typed Jupyter plugin `activate` function, where services
+commonly live for the application lifetime.
 
 It accepts common ownership patterns:
 
@@ -38,10 +41,11 @@ fluent-initializer, or registration-return calls such as `get`, `find`,
 `getCurrent`, `contextForWidget`, `insertCell`, `insertTab`,
 `initializeState`, `contextMenuWidget`, `add`, `addCommand`, `addFileType`,
 `addItem`, `addWidgetExtension`, `addToolbarButtonClass`,
-`addCommandToolbarButtonClass`, `addTab`, `open`, `openInspector`,
+`addCommandToolbarButtonClass`, `addTab`, `delete`, `open`, `openInspector`,
 `openOrReveal`, `findWidget`, `_findWidgetByID`, `widgetAt`,
 `widgetRenderer`, `pop`, `shift`, `registerItem`, `registerStatusItem`,
-`addKeyBinding`, `addGroup`, `register`, `transform`, and `add*Factory`.
+`addKeyBinding`, `addGroup`, `register`, `set`, `transform`, and
+`add*Factory`.
 
 ## Incorrect
 
@@ -88,8 +92,8 @@ default. Set this option to `[]` to require stricter typed ownership checks.
 
 Function or method names whose disposable return value should be treated as
 borrowed or owned by a registration/session API. If provided, this list
-replaces the default. Set this option to `[]` to report ignored registration
-return values.
+replaces the default and opts into stricter return checking for non-factory
+calls. Set this option to `[]` to report ignored registration return values.
 
 ```json
 {

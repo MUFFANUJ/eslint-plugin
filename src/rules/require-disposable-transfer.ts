@@ -17,6 +17,7 @@ import {
   isDisposableExpressionManaged,
   isDisposableSetFactoryCall,
   isDisposableType,
+  isInJupyterPluginActivate,
   isOuterFunctionScopeVariable,
   markManagedDisposableUse,
   PendingDisposableMap,
@@ -46,6 +47,7 @@ const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
   'contextForWidget',
   'contextMenuWidget',
   'defaultWidgetFactory',
+  'delete',
   'find',
   'findWidget',
   'get',
@@ -70,6 +72,7 @@ const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
   'requestCreateSubshell',
   'requestDebug',
   'requestDeleteSubshell',
+  'set',
   'shift',
   'widgetAt',
   'widgetRenderer',
@@ -78,6 +81,15 @@ const DEFAULT_IGNORED_RETURN_FUNCTION_NAMES = [
 
 function isDefaultIgnoredFactoryReturnFunctionName(name: string): boolean {
   return /^add[A-Za-z0-9_$]*Factory$/.test(name);
+}
+
+function isLikelyDisposableFactoryCall(node: TSESTree.CallExpression): boolean {
+  if (isDisposableSetFactoryCall(node)) {
+    return true;
+  }
+
+  const name = getCalleeName(node.callee);
+  return name !== null && /^(build|create|make|new)[A-Z0-9_$]/.test(name);
 }
 
 const requireDisposableTransfer = createRule({
@@ -190,9 +202,17 @@ const requireDisposableTransfer = createRule({
         markManagedDisposableUse(pending, node, ownership);
 
         if (
+          isInJupyterPluginActivate(node, ownership) ||
           isIgnoredReturn(node) ||
           !shouldCheckReturnedDisposable(node) ||
           isDisposableExpressionManaged(node, ownership)
+        ) {
+          return;
+        }
+
+        if (
+          ignoredReturnFunctionNamesOption === undefined &&
+          !isLikelyDisposableFactoryCall(node)
         ) {
           return;
         }

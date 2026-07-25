@@ -15,6 +15,8 @@ The rule checks `new` expressions that create known disposable classes such as
 `DisposableDelegate`, `ObservableDisposableDelegate`, `DisposableSet`, and
 `ObservableDisposableSet`. When TypeScript type information is available, it
 also detects objects typed as `IDisposable` or `IObservableDisposable`.
+It ignores disposable objects created directly inside a typed Jupyter plugin
+`activate` function, where services commonly live for the application lifetime.
 
 It accepts common ownership patterns:
 

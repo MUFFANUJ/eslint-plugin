@@ -306,6 +306,28 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     {
       filename: typeAwareFilename,
       code: `
+        import type { JupyterFrontEndPlugin } from './fixtures/types';
+
+        class WidgetTracker<T> {
+          readonly isDisposed = false;
+          constructor(options: { namespace: string }) {}
+          dispose(): void {}
+        }
+
+        export const plugin: JupyterFrontEndPlugin<void> = {
+          id: 'example:tracker',
+          activate: () => {
+            const tracker = new WidgetTracker<object>({
+              namespace: 'example'
+            });
+            console.log(tracker);
+          }
+        };
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
         declare const condition: boolean;
         class Widget {
           readonly isDisposed = false;
@@ -315,8 +337,8 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
           add(widget: Widget): void;
         };
 
-        const widget = new Widget();
         if (condition) {
+          const widget = new Widget();
           shell.add(widget);
         }
       `
@@ -762,6 +784,52 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
         {
           messageId: 'unmanagedDisposableVariable',
           data: { name: 'disposable' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare const condition: boolean;
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare const shell: {
+          add(widget: Widget): void;
+        };
+
+        const widget = new Widget();
+        if (condition) {
+          shell.add(widget);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unmanagedDisposableVariable',
+          data: { name: 'widget' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        declare const condition: boolean;
+        class Widget {
+          readonly isDisposed = false;
+          dispose(): void {}
+        }
+        declare function showDialog(options: { body: Widget }): void;
+
+        const body = new Widget();
+        if (condition) {
+          showDialog({ body });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unmanagedDisposableVariable',
+          data: { name: 'body' }
         }
       ]
     },

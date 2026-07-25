@@ -119,6 +119,26 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
     {
       filename: typeAwareFilename,
       code: `
+        import type { JupyterFrontEndPlugin } from './fixtures/types';
+
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+
+        export const plugin: JupyterFrontEndPlugin<void> = {
+          id: 'example:disposable',
+          activate: () => {
+            const disposable = createDisposable();
+            console.log(disposable);
+          }
+        };
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
         interface IDisposable {
           readonly isDisposed: boolean;
           dispose(): void;
@@ -305,6 +325,38 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
 
         const widget = _findWidgetByID('main');
         console.log(widget);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+
+        class PanelHandler {
+          private _findWidgetByID(id: string): IDisposable | undefined {
+            return undefined;
+          }
+
+          find(id: string): void {
+            const widget = this._findWidgetByID(id);
+            console.log(widget);
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function dataToMenu(data: object): IDisposable;
+
+        dataToMenu({});
       `
     },
     {
@@ -513,6 +565,23 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           readonly isDisposed: boolean;
           dispose(): void;
         }
+        declare const item: IDisposable;
+        declare const values: {
+          set(id: string, item: IDisposable): IDisposable | undefined;
+          delete(id: string): IDisposable | undefined;
+        };
+
+        values.set('item', item);
+        values.delete('item');
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
         declare function createDisposable(): IDisposable;
         declare function createMap(): {
           set(id: string, disposable: IDisposable): IDisposable;
@@ -649,17 +718,44 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           readonly isDisposed: boolean;
           dispose(): void;
         }
-        declare const item: IDisposable;
-        declare const values: {
-          set(id: string, item: IDisposable): IDisposable;
+        declare const condition: boolean;
+        declare function createDisposable(): IDisposable;
+        declare const owner: {
+          addWidget(widget: IDisposable): void;
         };
 
-        values.set('item', item);
+        const widget = createDisposable();
+        if (condition) {
+          owner.addWidget(widget);
+        }
       `,
       errors: [
         {
-          messageId: 'unhandledDisposable',
-          data: { name: 'set' }
+          messageId: 'unmanagedDisposableVariable',
+          data: { name: 'widget' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const condition: boolean;
+        declare function createDisposable(): IDisposable;
+        declare function showDialog(options: { body: IDisposable }): void;
+
+        const body = createDisposable();
+        if (condition) {
+          showDialog({ body });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'unmanagedDisposableVariable',
+          data: { name: 'body' }
         }
       ]
     },

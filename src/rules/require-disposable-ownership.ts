@@ -15,6 +15,7 @@ import {
   isDisposableConstructor,
   isDisposableExpressionManaged,
   isDisposableType,
+  isInJupyterPluginActivate,
   isOuterFunctionScopeVariable,
   markManagedDisposableUse,
   PendingDisposableMap
@@ -109,6 +110,10 @@ const requireDisposableOwnership = createRule({
 
       NewExpression(node) {
         markManagedDisposableUse(pending, node, ownership);
+
+        if (isInJupyterPluginActivate(node, ownership)) {
+          return;
+        }
 
         if (!isDisposableCreation(node)) {
           return;

@@ -6,6 +6,7 @@
 import { TSESTree } from '@typescript-eslint/types';
 import { ParserServices, TSESLint } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
+import { getJupyterPluginKind } from './plugin-utils';
 
 const DISPOSABLE_INTERFACE_NAMES = ['IDisposable', 'IObservableDisposable'];
 
@@ -362,12 +363,34 @@ export function getAssignedVariable(
   return null;
 }
 
-function isFunctionLike(node: TSESTree.Node): boolean {
+function isFunctionLike(
+  node: TSESTree.Node
+): node is
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression {
   return (
     node.type === 'ArrowFunctionExpression' ||
     node.type === 'FunctionDeclaration' ||
     node.type === 'FunctionExpression'
   );
+}
+
+function getEnclosingFunction(
+  node: TSESTree.Node
+):
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | null {
+  let parent = node.parent;
+  while (parent) {
+    if (isFunctionLike(parent)) {
+      return parent;
+    }
+    parent = parent.parent;
+  }
+  return null;
 }
 
 function isConditionalOrRepeated(node: TSESTree.Node): boolean {
@@ -451,6 +474,49 @@ export function isOuterFunctionScopeVariable(
   return (
     getFunctionScope(sourceCode.getScope(node)) !==
     getFunctionScope(variable.scope)
+  );
+}
+
+export function isInJupyterPluginActivate(
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): boolean {
+  const fn = getEnclosingFunction(node);
+  const property = fn?.parent;
+  if (
+    !fn ||
+    !property ||
+    property.type !== 'Property' ||
+    property.value !== fn ||
+    property.computed ||
+    !(
+      (property.key.type === 'Identifier' &&
+        property.key.name === 'activate') ||
+      (property.key.type === 'Literal' && property.key.value === 'activate')
+    )
+  ) {
+    return false;
+  }
+
+  const object = property.parent;
+  const variable = object?.parent;
+  if (
+    !object ||
+    object.type !== 'ObjectExpression' ||
+    !variable ||
+    variable.type !== 'VariableDeclarator'
+  ) {
+    return false;
+  }
+
+  return (
+    getJupyterPluginKind(
+      variable,
+      ownership.checker,
+      ownership.services
+        ? node => ownership.services!.esTreeNodeToTSNodeMap.get(node)
+        : null
+    ) !== null
   );
 }
 
@@ -750,15 +816,11 @@ function isDialogLaunchCall(
 function markManagedVariables(
   pending: PendingDisposableMap,
   node: TSESTree.Node,
-  ownership: DisposableOwnershipContext,
-  requireUnconditional = true
+  ownership: DisposableOwnershipContext
 ): void {
   const variables = getIdentifierVariables(ownership.sourceCode, node);
   for (const variable of variables) {
-    const shouldMark = requireUnconditional
-      ? isUnconditionalUse(node, variable)
-      : !isCatchClauseUse(node, variable);
-    if (shouldMark) {
+    if (isUnconditionalUse(node, variable)) {
       markDisposableManaged(pending, variable);
     }
   }
@@ -800,7 +862,7 @@ export function markManagedDisposableUse(
         property.type === 'Property' &&
         isOptionsObjectValueManaged(property.value, ownership)
       ) {
-        markManagedVariables(pending, property.value, ownership, false);
+        markManagedVariables(pending, property.value, ownership);
       }
     }
   }
@@ -812,7 +874,7 @@ export function markManagedDisposableUse(
   const ownershipArguments = getOwnershipArguments(node, ownership);
   if (ownershipArguments.length > 0) {
     for (const argument of ownershipArguments) {
-      markManagedVariables(pending, argument, ownership, false);
+      markManagedVariables(pending, argument, ownership);
     }
     return;
   }
