@@ -158,6 +158,60 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
           dispose(): void;
         }
         declare function createDisposable(): IDisposable;
+        declare const widget: {
+          readonly disposed: {
+            connect(callback: () => void): void;
+          };
+        };
+
+        const disposable = createDisposable();
+        widget.disposed.connect(() => {
+          disposable.dispose();
+        });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createEditor(): IDisposable;
+        declare const sourceViewer: {
+          open(options: { editorWrapper: IDisposable }): void;
+        };
+
+        const editorWrapper = createEditor();
+        sourceViewer.open({ editorWrapper });
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createOutput(): IDisposable;
+        declare const outputArea: {
+          _wrappedOutput(output: IDisposable, executionCount?: number | null): IDisposable;
+        };
+
+        function createWrappedOutput(): IDisposable {
+          const output = createOutput();
+          return outputArea._wrappedOutput(output, null);
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
 
         class Owner {
           private _disposable: IDisposable | null = null;
@@ -430,6 +484,147 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         const disposable = createDisposable();
         const disposables = DisposableSet.from([disposable]);
         disposables.dispose();
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable | undefined;
+        class DisposableSet {
+          add(disposable: IDisposable): void {}
+        }
+        declare const disposables: DisposableSet;
+
+        const disposable = createDisposable();
+        if (disposable) {
+          disposables.add(disposable);
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+
+        function createOptions(): { disposable: IDisposable } {
+          return {
+            disposable: createDisposable()
+          };
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+
+        class Owner {
+          private _state: { disposable: IDisposable } | null = null;
+
+          initialize(): void {
+            this._state = {
+              disposable: createDisposable()
+            };
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const ArrayExt: {
+          insert<T>(array: T[], index: number, value: T): void;
+        };
+        declare function createDisposable(): IDisposable;
+
+        class Owner {
+          private _items: IDisposable[] = [];
+
+          addItem(): void {
+            const item = createDisposable();
+            ArrayExt.insert(this._items, 0, item);
+          }
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createDisposable(): IDisposable;
+        declare const toolbar: {
+          insertBefore(before: string, name: string, item: IDisposable): void;
+        };
+
+        const item = createDisposable();
+        toolbar.insertBefore('kernelName', 'read-only-indicator', item);
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createRenderer(): IDisposable;
+        class MimeContent {
+          readonly isDisposed = false;
+          constructor(options: { renderer: IDisposable }) {}
+          dispose(): void {}
+        }
+        class MimeDocument {
+          readonly isDisposed = false;
+          constructor(options: { content: MimeContent }) {}
+          dispose(): void {}
+        }
+
+        function createDocument(): MimeDocument {
+          const renderer = createRenderer();
+          const content = new MimeContent({ renderer });
+          return new MimeDocument({ content });
+        }
+      `
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare function createSharedModel(): IDisposable;
+        declare const factory: {
+          createNew(options: { sharedModel: IDisposable }): IDisposable;
+        };
+
+        class Owner {
+          private _model: IDisposable | null = null;
+
+          initialize(): void {
+            const sharedModel = createSharedModel();
+            this._model = factory.createNew({ sharedModel });
+          }
+        }
       `
     },
     {
@@ -988,6 +1183,35 @@ ruleTester.run('require-disposable-transfer', requireDisposableTransfer, {
         const disposable = createDisposable();
         defer(() => {
           disposable.dispose();
+        });
+      `,
+      errors: [
+        {
+          messageId: 'unmanagedDisposableVariable',
+          data: { name: 'disposable' }
+        }
+      ]
+    },
+    {
+      filename: typeAwareFilename,
+      code: `
+        interface IDisposable {
+          readonly isDisposed: boolean;
+          dispose(): void;
+        }
+        declare const condition: boolean;
+        declare function createDisposable(): IDisposable;
+        declare const widget: {
+          readonly disposed: {
+            connect(callback: () => void): void;
+          };
+        };
+
+        const disposable = createDisposable();
+        widget.disposed.connect(() => {
+          if (condition) {
+            disposable.dispose();
+          }
         });
       `,
       errors: [

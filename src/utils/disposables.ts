@@ -20,23 +20,49 @@ const DISPOSABLE_CONSTRUCTOR_NAMES = [
 const DISPOSABLE_SET_NAMES = ['DisposableSet', 'ObservableDisposableSet'];
 
 const OWNED_CONSTRUCTOR_OPTION_NAMES = new Map([
+  ['CodeCell', ['model']],
+  ['CodeEditorWrapper', ['model']],
+  ['CodeViewerWidget', ['model']],
+  ['Collapser', ['widget']],
+  ['DocumentWidget', ['content']],
+  ['FileBrowser', ['model']],
+  ['FileEditorWidget', ['content']],
   ['Dialog', ['body']],
-  ['MainAreaWidget', ['content']]
+  ['Licenses', ['model']],
+  ['MainAreaWidget', ['content']],
+  ['MarkdownDocument', ['content']],
+  ['MarkdownViewer', ['renderer']],
+  ['MimeContent', ['renderer']],
+  ['MimeDocument', ['content']],
+  ['NotebookPanel', ['content']],
+  ['RawCell', ['model']]
 ]);
+
+const OWNED_FUNCTION_OPTION_NAMES = new Map([
+  ['createNew', ['sharedModel']],
+  ['createNotebook', ['kernelHistory']],
+  ['open', ['editorWrapper']],
+  ['showPopup', ['body']]
+]);
+
+const FLUENT_DISPOSABLE_METHOD_NAMES = ['initializeState'];
 
 export const DEFAULT_OWNERSHIP_FUNCTION_NAMES = [
   'add',
   'addCell',
   'addFactory',
+  'addGroup',
   'addItem',
   'addMenu',
   'addModelFactory',
   'addSibling',
   'addWidget',
   'addWidgetFactory',
+  'insertBefore',
   'insertItem',
   'insertWidget',
-  'registerStatusItem'
+  'registerStatusItem',
+  '_wrappedOutput'
 ];
 
 interface PendingDisposable {
@@ -91,16 +117,95 @@ function getTransparentChild(node: TSESTree.Node): TSESTree.Node | null {
   return null;
 }
 
+function reducerReturnsAccumulator(
+  callback: TSESTree.Node,
+  accumulatorName: string
+): boolean {
+  if (
+    callback.type !== 'ArrowFunctionExpression' &&
+    callback.type !== 'FunctionExpression'
+  ) {
+    return false;
+  }
+
+  if (
+    callback.body.type === 'Identifier' &&
+    callback.body.name === accumulatorName
+  ) {
+    return true;
+  }
+
+  return (
+    callback.body.type === 'BlockStatement' &&
+    callback.body.body.some(
+      statement =>
+        statement.type === 'ReturnStatement' &&
+        statement.argument?.type === 'Identifier' &&
+        statement.argument.name === accumulatorName
+    )
+  );
+}
+
+function isReduceAccumulatorInitialValue(
+  node: TSESTree.Node,
+  parent: TSESTree.Node
+): parent is TSESTree.CallExpression {
+  if (
+    parent.type !== 'CallExpression' ||
+    parent.callee.type !== 'MemberExpression' ||
+    getStaticMemberName(parent.callee) !== 'reduce' ||
+    parent.arguments.length < 2 ||
+    parent.arguments[1] !== node
+  ) {
+    return false;
+  }
+
+  const [callback] = parent.arguments;
+  if (
+    !callback ||
+    (callback.type !== 'ArrowFunctionExpression' &&
+      callback.type !== 'FunctionExpression')
+  ) {
+    return false;
+  }
+
+  const [accumulator] = callback.params;
+  return (
+    accumulator?.type === 'Identifier' &&
+    reducerReturnsAccumulator(callback, accumulator.name)
+  );
+}
+
 function getOuterExpression(node: TSESTree.Node): TSESTree.Node {
   let current = node;
   let parent = current.parent;
   while (parent) {
     const child = getTransparentChild(parent);
-    if (child !== current) {
-      break;
+    if (child === current) {
+      current = parent;
+      parent = current.parent;
+      continue;
     }
-    current = parent;
-    parent = current.parent;
+
+    if (isReduceAccumulatorInitialValue(current, parent)) {
+      current = parent;
+      parent = current.parent;
+      continue;
+    }
+
+    if (
+      parent.type === 'MemberExpression' &&
+      parent.object === current &&
+      parent.parent?.type === 'CallExpression' &&
+      parent.parent.callee === parent &&
+      FLUENT_DISPOSABLE_METHOD_NAMES.includes(getStaticMemberName(parent) ?? '')
+    ) {
+      current = parent.parent;
+      parent = current.parent;
+      continue;
+    }
+
+    break;
   }
   return current;
 }
@@ -116,22 +221,16 @@ function isThisMemberExpression(node: TSESTree.Node): boolean {
   return isThisMemberExpression(expression.object);
 }
 
-function isFallbackExpression(
-  node: TSESTree.Node
-): node is TSESTree.LogicalExpression {
-  return (
-    node.type === 'LogicalExpression' &&
-    (node.operator === '||' || node.operator === '??')
-  );
-}
-
 function getOuterFallbackExpression(node: TSESTree.Node): TSESTree.Node {
   let current = getOuterExpression(node);
   let parent = current.parent;
   while (
     parent &&
-    isFallbackExpression(parent) &&
-    (parent.left === current || parent.right === current)
+    ((parent.type === 'LogicalExpression' &&
+      (parent.operator === '||' || parent.operator === '??') &&
+      (parent.left === current || parent.right === current)) ||
+      (parent.type === 'ConditionalExpression' &&
+        (parent.consequent === current || parent.alternate === current)))
   ) {
     current = parent;
     parent = current.parent;
@@ -257,12 +356,39 @@ function getIdentifierVariable(
   return null;
 }
 
+function getVariableInitializer(
+  variable: TSESLint.Scope.Variable
+): TSESTree.Node | null {
+  for (const definition of variable.defs) {
+    const node = definition.node;
+    if (node.type === 'VariableDeclarator') {
+      return node.init ?? null;
+    }
+  }
+  return null;
+}
+
 function getIdentifierVariables(
   sourceCode: TSESLint.SourceCode,
-  node: TSESTree.Node | null | undefined
+  node: TSESTree.Node | null | undefined,
+  seen = new Set<TSESLint.Scope.Variable>()
 ): TSESLint.Scope.Variable[] {
   const variable = getIdentifierVariable(sourceCode, node);
   if (variable) {
+    if (seen.has(variable)) {
+      return [variable];
+    }
+    seen.add(variable);
+    const initializer = getVariableInitializer(variable);
+    if (
+      initializer?.type === 'ArrayExpression' ||
+      initializer?.type === 'ObjectExpression'
+    ) {
+      return [
+        variable,
+        ...getIdentifierVariables(sourceCode, initializer, seen)
+      ];
+    }
     return [variable];
   }
   if (!node) {
@@ -271,13 +397,13 @@ function getIdentifierVariables(
 
   const child = getTransparentChild(node);
   if (child) {
-    return getIdentifierVariables(sourceCode, child);
+    return getIdentifierVariables(sourceCode, child, seen);
   }
 
   if (node.type === 'ArrayExpression') {
     return node.elements.flatMap(element =>
       element && element.type !== 'SpreadElement'
-        ? getIdentifierVariables(sourceCode, element)
+        ? getIdentifierVariables(sourceCode, element, seen)
         : []
     );
   }
@@ -285,7 +411,7 @@ function getIdentifierVariables(
   if (node.type === 'ObjectExpression') {
     return node.properties.flatMap(property =>
       property.type === 'Property'
-        ? getIdentifierVariables(sourceCode, property.value)
+        ? getIdentifierVariables(sourceCode, property.value, seen)
         : []
     );
   }
@@ -305,13 +431,19 @@ export function addPendingDisposable(
 
 function markDisposableManaged(
   pending: PendingDisposableMap,
-  variable: TSESLint.Scope.Variable | null
+  variable: TSESLint.Scope.Variable | null,
+  useNode?: TSESTree.Node
 ): void {
   if (!variable) {
     return;
   }
   const records = pending.get(variable);
   if (!records) {
+    return;
+  }
+
+  if (useNode && shouldMarkAllBranchRecords(records, useNode)) {
+    pending.delete(variable);
     return;
   }
 
@@ -409,6 +541,67 @@ function isConditionalOrRepeated(node: TSESTree.Node): boolean {
   );
 }
 
+function isBeforeNode(first: TSESTree.Node, second: TSESTree.Node): boolean {
+  if (first.range && second.range) {
+    return first.range[1] <= second.range[0];
+  }
+  return first.loc.end.line <= second.loc.start.line;
+}
+
+function getExclusiveBranchAncestor(node: TSESTree.Node): TSESTree.Node | null {
+  let current = node;
+  let parent = current.parent;
+
+  while (parent) {
+    if (isFunctionLike(parent)) {
+      return null;
+    }
+
+    if (
+      parent.type === 'IfStatement' &&
+      (parent.consequent === current || parent.alternate === current)
+    ) {
+      return parent;
+    }
+
+    if (
+      parent.type === 'SwitchStatement' &&
+      current.type === 'SwitchCase' &&
+      parent.cases.includes(current)
+    ) {
+      return parent;
+    }
+
+    if (
+      parent.type === 'ConditionalExpression' &&
+      (parent.consequent === current || parent.alternate === current)
+    ) {
+      return parent;
+    }
+
+    current = parent;
+    parent = current.parent;
+  }
+
+  return null;
+}
+
+function shouldMarkAllBranchRecords(
+  records: PendingDisposable[],
+  useNode: TSESTree.Node
+): boolean {
+  if (records.length <= 1) {
+    return false;
+  }
+
+  const branch = getExclusiveBranchAncestor(records[0].node);
+  return (
+    branch !== null &&
+    isBeforeNode(branch, useNode) &&
+    records.every(record => getExclusiveBranchAncestor(record.node) === branch)
+  );
+}
+
 function isUnconditionalUse(
   node: TSESTree.Node,
   variable: TSESLint.Scope.Variable
@@ -427,6 +620,74 @@ function isUnconditionalUse(
   }
 
   return false;
+}
+
+function isTruthyIdentifierTest(
+  node: TSESTree.Node,
+  variable: TSESLint.Scope.Variable,
+  sourceCode: TSESLint.SourceCode
+): boolean {
+  const identifier = getIdentifierVariable(sourceCode, node);
+  if (identifier === variable) {
+    return true;
+  }
+
+  if (
+    node.type === 'UnaryExpression' &&
+    node.operator === '!' &&
+    node.argument.type === 'UnaryExpression' &&
+    node.argument.operator === '!'
+  ) {
+    return isTruthyIdentifierTest(node.argument.argument, variable, sourceCode);
+  }
+
+  if (node.type === 'LogicalExpression' && node.operator === '&&') {
+    return (
+      isTruthyIdentifierTest(node.left, variable, sourceCode) ||
+      isTruthyIdentifierTest(node.right, variable, sourceCode)
+    );
+  }
+
+  return false;
+}
+
+function isTruthyGuardedUse(
+  node: TSESTree.Node,
+  variable: TSESLint.Scope.Variable,
+  sourceCode: TSESLint.SourceCode
+): boolean {
+  let current = node;
+  let parent = current.parent;
+
+  while (parent) {
+    if (isFunctionLike(parent)) {
+      return false;
+    }
+
+    if (
+      parent.type === 'IfStatement' &&
+      parent.consequent === current &&
+      isTruthyIdentifierTest(parent.test, variable, sourceCode)
+    ) {
+      return true;
+    }
+
+    current = parent;
+    parent = current.parent;
+  }
+
+  return false;
+}
+
+function isManagedUse(
+  node: TSESTree.Node,
+  variable: TSESLint.Scope.Variable,
+  sourceCode: TSESLint.SourceCode
+): boolean {
+  return (
+    isUnconditionalUse(node, variable) ||
+    isTruthyGuardedUse(node, variable, sourceCode)
+  );
 }
 
 function isCatchClauseUse(
@@ -499,17 +760,13 @@ export function isInJupyterPluginActivate(
   }
 
   const object = property.parent;
-  const variable = object?.parent;
-  if (
-    !object ||
-    object.type !== 'ObjectExpression' ||
-    !variable ||
-    variable.type !== 'VariableDeclarator'
-  ) {
+  if (!object || object.type !== 'ObjectExpression') {
     return false;
   }
 
-  return (
+  const variable = object.parent;
+  if (
+    variable?.type === 'VariableDeclarator' &&
     getJupyterPluginKind(
       variable,
       ownership.checker,
@@ -517,6 +774,25 @@ export function isInJupyterPluginActivate(
         ? node => ownership.services!.esTreeNodeToTSNodeMap.get(node)
         : null
     ) !== null
+  ) {
+    return true;
+  }
+
+  const propertyNames = new Set(
+    object.properties.flatMap(property =>
+      property.type === 'Property'
+        ? [getPropertyName(property)].filter(
+            (name): name is string => name !== null
+          )
+        : []
+    )
+  );
+  return (
+    propertyNames.has('id') &&
+    propertyNames.has('activate') &&
+    ['autoStart', 'optional', 'provides', 'requires'].some(name =>
+      propertyNames.has(name)
+    )
   );
 }
 
@@ -566,6 +842,77 @@ function hasExpressionTypeName(
   }
 }
 
+function declarationHasHeritageName(
+  declaration: ts.Declaration,
+  names: readonly string[]
+): boolean {
+  if (
+    !(
+      ts.isClassDeclaration(declaration) ||
+      ts.isClassExpression(declaration) ||
+      ts.isInterfaceDeclaration(declaration)
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    declaration.heritageClauses?.some(clause =>
+      clause.types.some(type => {
+        const text = type.expression.getText();
+        return names.some(name => text === name || text.endsWith(`.${name}`));
+      })
+    ) ?? false
+  );
+}
+
+function hasHeritageName(
+  type: ts.Type,
+  names: readonly string[],
+  seen = new Set<ts.Type>()
+): boolean {
+  if (seen.has(type)) {
+    return false;
+  }
+  seen.add(type);
+
+  if (type.isUnion()) {
+    return type.types.some(part => hasHeritageName(part, names, seen));
+  }
+
+  if (type.isIntersection()) {
+    return type.types.some(part => hasHeritageName(part, names, seen));
+  }
+
+  const symbol = type.getSymbol();
+  return (
+    symbol?.declarations?.some(declaration =>
+      declarationHasHeritageName(declaration, names)
+    ) ?? false
+  );
+}
+
+function hasExpressionTypeOrHeritageName(
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext,
+  names: readonly string[]
+): boolean {
+  if (!ownership.checker || !ownership.services) {
+    return false;
+  }
+
+  try {
+    const tsNode = ownership.services.esTreeNodeToTSNodeMap.get(node);
+    const type = ownership.checker.getTypeAtLocation(tsNode);
+    return (
+      hasTypeName(type, ownership.checker, names) ||
+      hasHeritageName(type, names)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isAttachedPropertyType(
   node: TSESTree.Node,
   ownership: DisposableOwnershipContext
@@ -577,7 +924,14 @@ function isDialogType(
   node: TSESTree.Node,
   ownership: DisposableOwnershipContext
 ): boolean {
-  return hasExpressionTypeName(node, ownership, ['Dialog']);
+  return hasExpressionTypeOrHeritageName(node, ownership, ['Dialog']);
+}
+
+function isDocumentWidgetType(
+  node: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): boolean {
+  return hasExpressionTypeOrHeritageName(node, ownership, ['DocumentWidget']);
 }
 
 function isOwnershipAddCall(
@@ -625,6 +979,18 @@ export function isClassFieldCollectionMutationCall(
   );
 }
 
+function isArrayExtInsertCall(
+  node: TSESTree.CallExpression
+): node is TSESTree.CallExpression & { callee: TSESTree.MemberExpression } {
+  return (
+    isStaticMemberCall(node, 'insert') &&
+    node.callee.type === 'MemberExpression' &&
+    getCalleeName(node.callee.object) === 'ArrayExt' &&
+    node.arguments.length >= 3 &&
+    isThisMemberExpression(node.arguments[0])
+  );
+}
+
 function getOwnershipArguments(
   node: TSESTree.CallExpression,
   ownership: DisposableOwnershipContext
@@ -653,6 +1019,14 @@ function getOwnershipArguments(
     return node.arguments.slice(1);
   }
 
+  if (isClassFieldCollectionMutationCall(node, ['push', 'unshift'])) {
+    return node.arguments;
+  }
+
+  if (isArrayExtInsertCall(node)) {
+    return node.arguments.slice(2, 3);
+  }
+
   return [];
 }
 
@@ -670,6 +1044,84 @@ function getPropertyName(node: TSESTree.Property): string | null {
     return node.key.value;
   }
   return null;
+}
+
+function getObjectExpression(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node
+): TSESTree.ObjectExpression | null {
+  if (node.type === 'ObjectExpression') {
+    return node;
+  }
+
+  const child = getTransparentChild(node);
+  if (child) {
+    return getObjectExpression(sourceCode, child);
+  }
+
+  if (node.type === 'Identifier') {
+    const variable = resolveVariable(sourceCode, node);
+    const initializer = variable ? getVariableInitializer(variable) : null;
+    if (initializer?.type === 'ObjectExpression') {
+      return initializer;
+    }
+  }
+
+  return null;
+}
+
+function getManagedOptionNames(
+  node: TSESTree.CallExpression | TSESTree.NewExpression,
+  ownership: DisposableOwnershipContext
+): string[] {
+  if (node.type === 'NewExpression') {
+    const constructorName = getCalleeName(node.callee);
+    const names =
+      constructorName === null
+        ? []
+        : (OWNED_CONSTRUCTOR_OPTION_NAMES.get(constructorName) ?? []);
+    return [
+      ...names,
+      ...(isDialogType(node, ownership) ? ['body'] : []),
+      ...(isDocumentWidgetType(node, ownership) ? ['content'] : [])
+    ];
+  }
+
+  const calleeName = getCalleeName(node.callee);
+  return calleeName === null
+    ? []
+    : (OWNED_FUNCTION_OPTION_NAMES.get(calleeName) ?? []);
+}
+
+function markManagedKnownOptionVariables(
+  pending: PendingDisposableMap,
+  node: TSESTree.CallExpression | TSESTree.NewExpression,
+  ownership: DisposableOwnershipContext
+): void {
+  const optionNames = getManagedOptionNames(node, ownership);
+  if (optionNames.length === 0) {
+    return;
+  }
+
+  for (const argument of node.arguments) {
+    if (argument.type === 'ObjectExpression') {
+      continue;
+    }
+
+    const object = getObjectExpression(ownership.sourceCode, argument);
+    if (!object) {
+      continue;
+    }
+
+    for (const property of object.properties) {
+      if (
+        property.type === 'Property' &&
+        optionNames.includes(getPropertyName(property) ?? '')
+      ) {
+        markManagedVariables(pending, property.value, ownership);
+      }
+    }
+  }
 }
 
 function isOptionsObjectValueManaged(
@@ -711,17 +1163,29 @@ function isOptionsObjectValueManaged(
   if (parent.type === 'NewExpression') {
     const constructorName = getCalleeName(parent.callee);
     return (
-      constructorName !== null &&
       propertyName !== null &&
-      (OWNED_CONSTRUCTOR_OPTION_NAMES.get(constructorName)?.includes(
-        propertyName
-      ) ??
-        false)
+      ((constructorName !== null &&
+        (OWNED_CONSTRUCTOR_OPTION_NAMES.get(constructorName)?.includes(
+          propertyName
+        ) ??
+          false)) ||
+        (propertyName === 'body' && isDialogType(parent, ownership)) ||
+        (propertyName === 'content' && isDocumentWidgetType(parent, ownership)))
     );
   }
 
   if (getCalleeName(parent.callee) === 'showDialog') {
     return propertyName === 'body';
+  }
+
+  const calleeName = getCalleeName(parent.callee);
+  if (
+    calleeName !== null &&
+    propertyName !== null &&
+    (OWNED_FUNCTION_OPTION_NAMES.get(calleeName)?.includes(propertyName) ??
+      false)
+  ) {
+    return true;
   }
 
   return (
@@ -730,6 +1194,98 @@ function isOptionsObjectValueManaged(
       object as TSESTree.CallExpressionArgument
     )
   );
+}
+
+function getManagedAggregateExpression(
+  node: TSESTree.Node
+): TSESTree.Node | null {
+  let current = getOuterExpression(node);
+  let parent = current.parent;
+  let foundAggregate = false;
+
+  while (parent) {
+    if (parent.type === 'Property' && parent.value === current) {
+      current = parent;
+      parent = current.parent;
+      foundAggregate = true;
+      continue;
+    }
+
+    if (
+      parent.type === 'ArrayExpression' &&
+      parent.elements.includes(current as TSESTree.Expression)
+    ) {
+      current = parent;
+      parent = current.parent;
+      foundAggregate = true;
+      continue;
+    }
+
+    if (
+      parent.type === 'ObjectExpression' &&
+      parent.properties.includes(current as TSESTree.Property)
+    ) {
+      current = parent;
+      parent = current.parent;
+      foundAggregate = true;
+      continue;
+    }
+
+    break;
+  }
+
+  return foundAggregate ? current : null;
+}
+
+function isAggregateExpressionManaged(
+  expression: TSESTree.Node,
+  ownership: DisposableOwnershipContext
+): boolean {
+  const aggregate = getManagedAggregateExpression(expression);
+  if (!aggregate) {
+    return false;
+  }
+
+  const outerAggregate = getOuterFallbackExpression(aggregate);
+  const parent = outerAggregate.parent;
+  if (!parent) {
+    return false;
+  }
+
+  if (parent.type === 'ReturnStatement' && parent.argument === outerAggregate) {
+    return true;
+  }
+
+  if (
+    parent.type === 'ArrowFunctionExpression' &&
+    parent.body === outerAggregate
+  ) {
+    return true;
+  }
+
+  if (
+    parent.type === 'AssignmentExpression' &&
+    parent.right === outerAggregate &&
+    parent.left.type === 'MemberExpression'
+  ) {
+    return true;
+  }
+
+  if (parent.type === 'PropertyDefinition' && parent.value === outerAggregate) {
+    return true;
+  }
+
+  if (isOptionsObjectValueManaged(outerAggregate, ownership)) {
+    return true;
+  }
+
+  if (parent.type === 'CallExpression') {
+    return getOwnershipArguments(parent, ownership).includes(
+      outerAggregate as TSESTree.CallExpressionArgument
+    );
+  }
+
+  return false;
 }
 
 export function isDisposableExpressionManaged(
@@ -781,6 +1337,10 @@ export function isDisposableExpressionManaged(
     return true;
   }
 
+  if (isAggregateExpressionManaged(expression, ownership)) {
+    return true;
+  }
+
   if (
     parent.type === 'MemberExpression' &&
     parent.object === expression &&
@@ -820,9 +1380,200 @@ function markManagedVariables(
 ): void {
   const variables = getIdentifierVariables(ownership.sourceCode, node);
   for (const variable of variables) {
-    if (isUnconditionalUse(node, variable)) {
-      markDisposableManaged(pending, variable);
+    if (isManagedUse(node, variable, ownership.sourceCode)) {
+      markDisposableManaged(pending, variable, node);
     }
+  }
+}
+
+function markManagedVariablesWithoutScopeCheck(
+  pending: PendingDisposableMap,
+  node: TSESTree.Node | null | undefined,
+  ownership: DisposableOwnershipContext,
+  useNode?: TSESTree.Node
+): void {
+  const variables = getIdentifierVariables(ownership.sourceCode, node);
+  for (const variable of variables) {
+    markDisposableManaged(pending, variable, useNode);
+  }
+}
+
+function getDisposedSignalCallback(
+  node: TSESTree.CallExpression
+): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | null {
+  if (
+    !isStaticMemberCall(node, 'connect') ||
+    node.callee.type !== 'MemberExpression' ||
+    node.callee.object.type !== 'MemberExpression' ||
+    getStaticMemberName(node.callee.object) !== 'disposed'
+  ) {
+    return null;
+  }
+
+  const [callback] = node.arguments;
+  return callback &&
+    (callback.type === 'ArrowFunctionExpression' ||
+      callback.type === 'FunctionExpression')
+    ? callback
+    : null;
+}
+
+function getDisposeCallTarget(node: TSESTree.Node): TSESTree.Node | null {
+  if (
+    node.type === 'CallExpression' &&
+    isStaticMemberCall(node, 'dispose') &&
+    node.callee.type === 'MemberExpression' &&
+    node.callee.object.type !== 'Super'
+  ) {
+    return node.callee.object;
+  }
+  return null;
+}
+
+function getUnconditionalDisposeTargets(
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression
+): TSESTree.Node[] {
+  const body = callback.body;
+  const expressionTarget = getDisposeCallTarget(body);
+  if (expressionTarget) {
+    return [expressionTarget];
+  }
+
+  if (body.type !== 'BlockStatement') {
+    return [];
+  }
+
+  return body.body.flatMap(statement => {
+    if (statement.type !== 'ExpressionStatement') {
+      return [];
+    }
+    const target = getDisposeCallTarget(statement.expression);
+    return target ? [target] : [];
+  });
+}
+
+function expressionContainsIdentifierName(
+  node: TSESTree.Node | null | undefined,
+  name: string
+): boolean {
+  if (!node) {
+    return false;
+  }
+
+  if (node.type === 'Identifier' && node.name === name) {
+    return true;
+  }
+
+  const child = getTransparentChild(node);
+  if (child) {
+    return expressionContainsIdentifierName(child, name);
+  }
+
+  if (node.type === 'ArrayExpression') {
+    return node.elements.some(element =>
+      element && element.type !== 'SpreadElement'
+        ? expressionContainsIdentifierName(element, name)
+        : false
+    );
+  }
+
+  if (node.type === 'ObjectExpression') {
+    return node.properties.some(property =>
+      property.type === 'Property'
+        ? expressionContainsIdentifierName(property.value, name)
+        : false
+    );
+  }
+
+  return false;
+}
+
+function isOwnershipCallWithIdentifier(
+  node: TSESTree.Node,
+  name: string,
+  ownership: DisposableOwnershipContext
+): node is TSESTree.CallExpression {
+  return (
+    node.type === 'CallExpression' &&
+    getOwnershipArguments(node, ownership).some(argument =>
+      expressionContainsIdentifierName(argument, name)
+    )
+  );
+}
+
+function forEachCallbackOwnsParameter(
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  parameterName: string,
+  ownership: DisposableOwnershipContext
+): boolean {
+  if (isOwnershipCallWithIdentifier(callback.body, parameterName, ownership)) {
+    return true;
+  }
+
+  if (callback.body.type !== 'BlockStatement') {
+    return false;
+  }
+
+  return callback.body.body.some(
+    statement =>
+      statement.type === 'ExpressionStatement' &&
+      isOwnershipCallWithIdentifier(
+        statement.expression,
+        parameterName,
+        ownership
+      )
+  );
+}
+
+function markImmediateForEachOwnership(
+  pending: PendingDisposableMap,
+  node: TSESTree.CallExpression,
+  ownership: DisposableOwnershipContext
+): void {
+  if (
+    !isStaticMemberCall(node, 'forEach') ||
+    node.callee.type !== 'MemberExpression' ||
+    node.callee.object.type !== 'ArrayExpression'
+  ) {
+    return;
+  }
+
+  const [callback] = node.arguments;
+  if (
+    !callback ||
+    (callback.type !== 'ArrowFunctionExpression' &&
+      callback.type !== 'FunctionExpression')
+  ) {
+    return;
+  }
+
+  const [parameter] = callback.params;
+  if (
+    parameter?.type !== 'Identifier' ||
+    !forEachCallbackOwnsParameter(callback, parameter.name, ownership)
+  ) {
+    return;
+  }
+
+  for (const element of node.callee.object.elements) {
+    if (element && element.type !== 'SpreadElement') {
+      markManagedVariablesWithoutScopeCheck(pending, element, ownership, node);
+    }
+  }
+}
+
+function markDisposedSignalCallbackDisposals(
+  pending: PendingDisposableMap,
+  node: TSESTree.CallExpression,
+  ownership: DisposableOwnershipContext
+): void {
+  const callback = getDisposedSignalCallback(node);
+  if (!callback) {
+    return;
+  }
+
+  for (const target of getUnconditionalDisposeTargets(callback)) {
+    markManagedVariablesWithoutScopeCheck(pending, target, ownership, node);
   }
 }
 
@@ -832,18 +1583,38 @@ export function markManagedDisposableUse(
   ownership: DisposableOwnershipContext
 ): void {
   if (node.type === 'ReturnStatement') {
-    const variable = getIdentifierVariable(ownership.sourceCode, node.argument);
-    if (variable && isUnconditionalUse(node, variable)) {
-      markDisposableManaged(pending, variable);
+    if (isInJupyterPluginActivate(node, ownership)) {
+      markManagedVariablesWithoutScopeCheck(
+        pending,
+        node.argument,
+        ownership,
+        node
+      );
+      return;
+    }
+
+    const variables = getIdentifierVariables(
+      ownership.sourceCode,
+      node.argument
+    );
+    for (const variable of variables) {
+      if (isManagedUse(node, variable, ownership.sourceCode)) {
+        markDisposableManaged(pending, variable, node);
+      }
     }
     return;
   }
 
   if (node.type === 'AssignmentExpression') {
     if (node.left.type === 'MemberExpression') {
-      const variable = getIdentifierVariable(ownership.sourceCode, node.right);
-      if (variable && isUnconditionalUse(node, variable)) {
-        markDisposableManaged(pending, variable);
+      const variables = getIdentifierVariables(
+        ownership.sourceCode,
+        node.right
+      );
+      for (const variable of variables) {
+        if (isManagedUse(node, variable, ownership.sourceCode)) {
+          markDisposableManaged(pending, variable, node);
+        }
       }
     }
     return;
@@ -852,6 +1623,13 @@ export function markManagedDisposableUse(
   if (node.type !== 'CallExpression' && node.type !== 'NewExpression') {
     return;
   }
+
+  if (node.type === 'CallExpression') {
+    markDisposedSignalCallbackDisposals(pending, node, ownership);
+    markImmediateForEachOwnership(pending, node, ownership);
+  }
+
+  markManagedKnownOptionVariables(pending, node, ownership);
 
   for (const argument of node.arguments) {
     if (argument.type !== 'ObjectExpression') {
@@ -890,11 +1668,11 @@ export function markManagedDisposableUse(
     );
     if (variable) {
       if (
-        isUnconditionalUse(node, variable) ||
+        isManagedUse(node, variable, ownership.sourceCode) ||
         (hasPendingDisposableSet(pending, variable) &&
           !isCatchClauseUse(node, variable))
       ) {
-        markDisposableManaged(pending, variable);
+        markDisposableManaged(pending, variable, node);
       }
     }
   }
@@ -904,8 +1682,8 @@ export function markManagedDisposableUse(
       ownership.sourceCode,
       node.callee.object
     );
-    if (variable && isUnconditionalUse(node, variable)) {
-      markDisposableManaged(pending, variable);
+    if (variable && isManagedUse(node, variable, ownership.sourceCode)) {
+      markDisposableManaged(pending, variable, node);
     }
   }
 }
@@ -923,34 +1701,10 @@ function hasDisposableTypeName(
 function declarationHasDisposableHeritage(
   declaration: ts.Declaration
 ): boolean {
-  if (
-    !(
-      ts.isClassDeclaration(declaration) ||
-      ts.isClassExpression(declaration) ||
-      ts.isInterfaceDeclaration(declaration)
-    )
-  ) {
-    return false;
-  }
-
-  return (
-    declaration.heritageClauses?.some(clause =>
-      clause.types.some(type => {
-        const text = type.expression.getText();
-        for (const name of DISPOSABLE_INTERFACE_NAMES) {
-          if (text === name || text.endsWith(`.${name}`)) {
-            return true;
-          }
-        }
-        for (const name of DISPOSABLE_CONSTRUCTOR_NAMES) {
-          if (text === name || text.endsWith(`.${name}`)) {
-            return true;
-          }
-        }
-        return false;
-      })
-    ) ?? false
-  );
+  return declarationHasHeritageName(declaration, [
+    ...DISPOSABLE_INTERFACE_NAMES,
+    ...DISPOSABLE_CONSTRUCTOR_NAMES
+  ]);
 }
 
 function hasDisposableHeritage(type: ts.Type): boolean {
