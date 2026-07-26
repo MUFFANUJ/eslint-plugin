@@ -76,6 +76,21 @@ function makeExtensionAdoptionConfig(projectName) {
   };
 }
 
+function makeDisposableTestSeverityConfig(projectName) {
+  return {
+    basePath: __dirname,
+    files: [
+      `${projectName}/**/*.spec.ts`,
+      `${projectName}/**/*.test.ts`,
+      `${projectName}/packages/*/src/testutils.ts`
+    ],
+    rules: {
+      'jupyter/require-disposable-ownership': 'warn',
+      'jupyter/require-disposable-transfer': 'warn'
+    }
+  };
+}
+
 function makeTestConfig(projectName) {
   return [
     {
@@ -138,5 +153,6 @@ const projects = ['jupyterlab', 'notebook', 'jupyterlite'];
 export default [
   ...projects.map(makeProjectConfig),
   ...projects.map(makeExtensionAdoptionConfig),
+  ...projects.map(makeDisposableTestSeverityConfig),
   ...projects.flatMap(makeTestConfig)
 ]
