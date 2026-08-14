@@ -42,6 +42,7 @@ export const INTERACTION_METHODS: ReadonlySet<string> = new Set([
  * e.g. `page.locator(sel).first().click()`.
  */
 const CHAIN_PASSTHROUGH_METHODS: ReadonlySet<string> = new Set([
+  'filter',
   'first',
   'last',
   'nth'
@@ -85,8 +86,34 @@ export interface SelectorInteractionMatch {
   isRightClick: boolean;
 }
 
-function isPageIdentifier(node: TSESTree.Node): boolean {
+export interface SelectorInteractionOptions {
+  /**
+   * Predicate for the Playwright page-like object that roots selector
+   * interactions. Defaults to the Galata `page` fixture.
+   */
+  isPageExpression?: (node: TSESTree.Node) => boolean;
+}
+
+export interface StaticSelectorTextOptions {
+  /** Whether to combine static pieces of interpolated template selectors. */
+  allowPartialTemplate?: boolean;
+}
+
+function isDefaultPageExpression(node: TSESTree.Node): boolean {
   return node.type === 'Identifier' && node.name === 'page';
+}
+
+export function isLikelyPageExpression(node: TSESTree.Node): boolean {
+  if (node.type === 'Identifier') {
+    return node.name === 'page' || node.name.endsWith('Page');
+  }
+
+  return (
+    node.type === 'MemberExpression' &&
+    !node.computed &&
+    node.property.type === 'Identifier' &&
+    node.property.name === 'page'
+  );
 }
 
 function firstArgument(
@@ -122,7 +149,8 @@ export function isRightClick(node: TSESTree.CallExpression): boolean {
  * contains a non-locator call, or carries no selector argument at all.
  */
 function collectLocatorChainSelectors(
-  node: TSESTree.Node
+  node: TSESTree.Node,
+  isPageExpression: (node: TSESTree.Node) => boolean
 ): SelectorPart[] | null {
   const selectors: SelectorPart[] = [];
   let current: TSESTree.Node = node;
@@ -146,7 +174,7 @@ function collectLocatorChainSelectors(
     } else if (!CHAIN_PASSTHROUGH_METHODS.has(callee.property.name)) {
       return null;
     }
-    if (isPageIdentifier(callee.object)) {
+    if (isPageExpression(callee.object)) {
       return selectors.length > 0 ? selectors : null;
     }
     current = callee.object;
@@ -164,8 +192,11 @@ function collectLocatorChainSelectors(
  * Returns null for any other shape
  */
 export function matchSelectorInteraction(
-  node: TSESTree.CallExpression
+  node: TSESTree.CallExpression,
+  options: SelectorInteractionOptions = {}
 ): SelectorInteractionMatch | null {
+  const isPageExpression =
+    options.isPageExpression ?? isDefaultPageExpression;
   const { callee } = node;
   if (callee.type !== 'MemberExpression' || callee.computed) {
     return null;
@@ -179,7 +210,7 @@ export function matchSelectorInteraction(
   }
 
   // page.click(selector, ...)
-  if (isPageIdentifier(callee.object)) {
+  if (isPageExpression(callee.object)) {
     const selectorArgNode = firstArgument(node);
     return selectorArgNode
       ? {
@@ -193,7 +224,10 @@ export function matchSelectorInteraction(
   }
 
   // page.locator(selector).getByText(...).click(...)
-  const selectorParts = collectLocatorChainSelectors(callee.object);
+  const selectorParts = collectLocatorChainSelectors(
+    callee.object,
+    isPageExpression
+  );
   return selectorParts
     ? {
         callNode: node,
@@ -210,15 +244,26 @@ export function matchSelectorInteraction(
  * matched against known patterns. String literals return their value;
  * template literals return their static parts joined by a space, so
  * `` `.jp-DirListing-item span:has-text("${name}")` `` still exposes its
- * static prefix. Fully dynamic expressions return null.
+ * static prefix. Pass `allowPartialTemplate: false` when interpolated
+ * templates should be treated as dynamic. Fully dynamic expressions return
+ * null.
  */
 export function extractStaticSelectorText(
-  node: TSESTree.Expression
+  node: TSESTree.Expression,
+  options: StaticSelectorTextOptions = {}
 ): string | null {
   if (node.type === 'Literal') {
     return typeof node.value === 'string' ? node.value : null;
   }
+  const allowPartialTemplate = options.allowPartialTemplate !== false;
   if (node.type === 'TemplateLiteral') {
+    if (!allowPartialTemplate) {
+      return node.expressions.length > 0
+        ? null
+        : node.quasis
+            .map(quasi => quasi.value.cooked ?? quasi.value.raw)
+            .join('');
+    }
     return node.quasis.map(quasi => quasi.value.cooked ?? '').join(' ');
   }
   return null;

@@ -29,11 +29,12 @@ const sidebars: SidebarsConfig = {
         'rules/no-untranslated-string',
         'rules/plugin-activation-args',
         'rules/plugin-description',
+        'rules/prefer-sidebar-activity-helper',
         'rules/prefer-signal-this-arg',
-        'rules/require-signal-cleanup',
-        'rules/require-signal-this-arg',
         'rules/require-disposable-ownership',
         'rules/require-disposable-transfer',
+        'rules/require-signal-cleanup',
+        'rules/require-signal-this-arg',
         'rules/require-soft-assertions-before-snapshots',
         'rules/token-format'
       ]

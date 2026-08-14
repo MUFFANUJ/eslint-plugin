@@ -21,6 +21,7 @@ import galataPreferFilebrowserHelper from './rules/galata-prefer-filebrowser-hel
 import requireDisposableOwnership from './rules/require-disposable-ownership';
 import requireDisposableTransfer from './rules/require-disposable-transfer';
 import incorrectTranslatorUsage from './rules/incorrect-translator-usage';
+import preferSidebarActivityHelper from './rules/prefer-sidebar-activity-helper';
 
 const plugin = {
   rules: {
@@ -41,7 +42,8 @@ const plugin = {
     'galata-prefer-filebrowser-helper': galataPreferFilebrowserHelper,
     'require-disposable-ownership': requireDisposableOwnership,
     'require-disposable-transfer': requireDisposableTransfer,
-    'incorrect-translator-usage': incorrectTranslatorUsage
+    'incorrect-translator-usage': incorrectTranslatorUsage,
+    'prefer-sidebar-activity-helper': preferSidebarActivityHelper
   },
   configs: {
     recommended: [
@@ -77,6 +79,17 @@ const plugin = {
           'jupyter/require-soft-assertions-before-snapshots': 'warn',
           'jupyter/galata-prefer-filebrowser-helper': 'warn'
         }
+      },
+      {
+        files: [
+          '**/galata/test/**/*.ts',
+          '**/galata/test/**/*.js',
+          '**/ui-tests/**/*.spec.ts',
+          '**/ui-tests/**/*.test.ts'
+        ],
+        rules: {
+          'jupyter/prefer-sidebar-activity-helper': 'warn'
+        }
       }
     ],
     'recommended-legacy': {
@@ -108,6 +121,17 @@ const plugin = {
           rules: {
             'jupyter/require-soft-assertions-before-snapshots': 'warn',
             'jupyter/galata-prefer-filebrowser-helper': 'warn'
+          }
+        },
+        {
+          files: [
+            '**/galata/test/**/*.ts',
+            '**/galata/test/**/*.js',
+            '**/ui-tests/**/*.spec.ts',
+            '**/ui-tests/**/*.test.ts'
+          ],
+          rules: {
+            'jupyter/prefer-sidebar-activity-helper': 'warn'
           }
         }
       ]
