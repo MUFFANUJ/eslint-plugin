@@ -21,7 +21,7 @@ import galataPreferFilebrowserHelper from './rules/galata-prefer-filebrowser-hel
 import requireDisposableOwnership from './rules/require-disposable-ownership';
 import requireDisposableTransfer from './rules/require-disposable-transfer';
 import incorrectTranslatorUsage from './rules/incorrect-translator-usage';
-import preferSidebarActivityHelper from './rules/prefer-sidebar-activity-helper';
+import galataPreferSidebarActivityHelper from './rules/galata-prefer-sidebar-activity-helper';
 
 const plugin = {
   rules: {
@@ -43,7 +43,7 @@ const plugin = {
     'require-disposable-ownership': requireDisposableOwnership,
     'require-disposable-transfer': requireDisposableTransfer,
     'incorrect-translator-usage': incorrectTranslatorUsage,
-    'prefer-sidebar-activity-helper': preferSidebarActivityHelper
+    'galata-prefer-sidebar-activity-helper': galataPreferSidebarActivityHelper
   },
   configs: {
     recommended: [
@@ -88,7 +88,7 @@ const plugin = {
           '**/ui-tests/**/*.test.ts'
         ],
         rules: {
-          'jupyter/prefer-sidebar-activity-helper': 'warn'
+          'jupyter/galata-prefer-sidebar-activity-helper': 'warn'
         }
       }
     ],
@@ -131,7 +131,7 @@ const plugin = {
             '**/ui-tests/**/*.test.ts'
           ],
           rules: {
-            'jupyter/prefer-sidebar-activity-helper': 'warn'
+            'jupyter/galata-prefer-sidebar-activity-helper': 'warn'
           }
         }
       ]

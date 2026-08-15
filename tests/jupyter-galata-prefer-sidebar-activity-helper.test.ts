@@ -4,7 +4,7 @@
  */
 
 import { RuleTester } from '@typescript-eslint/rule-tester';
-import rule from '../src/rules/prefer-sidebar-activity-helper';
+import rule from '../src/rules/galata-prefer-sidebar-activity-helper';
 
 const ruleTester = new RuleTester({
   languageOptions: {
@@ -16,7 +16,7 @@ const ruleTester = new RuleTester({
   }
 });
 
-ruleTester.run('prefer-sidebar-activity-helper', rule, {
+ruleTester.run('galata-prefer-sidebar-activity-helper', rule, {
   valid: [
     {
       code: `await page.sidebar.openTab('jp-running-sessions');`
@@ -49,6 +49,9 @@ ruleTester.run('prefer-sidebar-activity-helper', rule, {
       code: `await page.click('[title="Some Extension Sidebar"]');`
     },
     {
+      code: `await page.click('[title="Sessions and Tabs"]');`
+    },
+    {
       code: `await dialog.locator('[title="Property Inspector"]').click();`
     },
     {
@@ -62,12 +65,6 @@ ruleTester.run('prefer-sidebar-activity-helper', rule, {
     },
     {
       code: `await page.click(\`div[role="main"] >> text=\${name}.ipynb\`);`
-    },
-    {
-      code: `
-        // Close the sidebar
-        await page.locator('[title="Property Inspector"]').click();
-      `
     },
     {
       code: `await page.click('[title="Property Inspector"]');`,
@@ -125,13 +122,16 @@ ruleTester.run('prefer-sidebar-activity-helper', rule, {
       ]
     },
     {
-      code: `await this.page.locator('[title="Debugger"]').filter({ hasText: 'Debugger' }).click();`,
+      code: `
+        // Close the sidebar
+        await page.locator('[title="Property Inspector"]').click();
+      `,
       errors: [
         {
           messageId: 'preferSidebarHelper',
           data: {
-            title: 'Debugger',
-            id: 'jp-debugger-sidebar'
+            title: 'Property Inspector',
+            id: 'jp-property-inspector'
           }
         }
       ]

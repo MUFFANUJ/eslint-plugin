@@ -141,7 +141,7 @@ function makeTestConfig(projectName) {
       },
       rules: {
         'jupyter/galata-prefer-filebrowser-helper': 'warn',
-        'jupyter/prefer-sidebar-activity-helper': 'warn'
+        'jupyter/galata-prefer-sidebar-activity-helper': 'warn'
       },
       languageOptions: {
         parser: resolvedParser,

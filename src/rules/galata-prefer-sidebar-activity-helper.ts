@@ -7,7 +7,6 @@ import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/create-rule';
 import {
   extractStaticSelectorText,
-  isLikelyPageExpression,
   matchSelectorInteraction,
   SelectorInteractionMatch
 } from '../utils/playwright-selectors';
@@ -27,11 +26,9 @@ const SIDEBAR_TITLE_TO_ID = new Map<string, string>([
   ['File Browser', 'filebrowser'],
   ['Property Inspector', 'jp-property-inspector'],
   ['Running Terminals and Kernels', 'jp-running-sessions'],
-  ['Sessions and Tabs', 'jp-running-sessions'],
   ['Table of Contents', 'table-of-contents']
 ]);
 
-const ACTION_METHODS = new Set(['click', 'tap']);
 const TITLE_ATTRIBUTE_PATTERN =
   /\[\s*title\s*=\s*(?:"([^"]+)"|'([^']+)')\s*\]/g;
 const MAIN_AREA_PATTERN =
@@ -45,7 +42,7 @@ const FILE_LIKE_ACTIVITY_NAME_PATTERN = /\.[A-Za-z0-9][\w-]*(?:\s*\*)?$/;
 function getSelectorSource(
   match: SelectorInteractionMatch
 ): SelectorSource | null {
-  if (!ACTION_METHODS.has(match.interactionMethod) || match.isRightClick) {
+  if (match.interactionMethod !== 'click' || match.isRightClick) {
     return null;
   }
 
@@ -116,22 +113,18 @@ function isGalataHelperImplementation(filename: string): boolean {
   return filename.replace(/\\/g, '/').includes('/galata/src/helpers/');
 }
 
-function isCloseSidebarComment(value: string): boolean {
-  return /\b(close|closing|collapse|collapsing|hide|hiding)\b/i.test(value);
-}
-
-const preferSidebarActivityHelper = createRule<Options, MessageIds>({
-  name: 'prefer-sidebar-activity-helper',
+const galataPreferSidebarActivityHelper = createRule<Options, MessageIds>({
+  name: 'galata-prefer-sidebar-activity-helper',
   meta: {
     type: 'suggestion',
     docs: {
       description:
         'Prefer Galata sidebar and activity helpers over raw Playwright tab selectors',
-      url: 'https://eslint-plugin.readthedocs.io/en/latest/rules/prefer-sidebar-activity-helper/'
+      url: 'https://eslint-plugin.readthedocs.io/en/latest/rules/galata-prefer-sidebar-activity-helper/'
     },
     messages: {
       preferSidebarHelper:
-        'Use page.sidebar.openTab("{{ id }}") instead of clicking the "{{ title }}" sidebar tab directly.',
+        'Use page.sidebar.openTab("{{ id }}") to open the "{{ title }}" sidebar tab, or page.sidebar.close(...) if this click is closing it.',
       preferActivityHelper:
         'Use page.activity.activateTab("{{ tabName }}") instead of clicking a main area tab by text.'
     },
@@ -144,30 +137,9 @@ const preferSidebarActivityHelper = createRule<Options, MessageIds>({
       return {};
     }
 
-    const sourceCode = context.sourceCode;
-
-    function hasNearbyCloseSidebarComment(node: TSESTree.Node): boolean {
-      return sourceCode.getAllComments().some(comment => {
-        return (
-          comment.loc &&
-          node.loc &&
-          comment.loc.end.line < node.loc.start.line &&
-          comment.loc.end.line >= node.loc.start.line - 2 &&
-          isCloseSidebarComment(comment.value)
-        );
-      });
-    }
-
-    function reportSelectorSource(
-      source: SelectorSource,
-      actionNode: TSESTree.CallExpression
-    ): void {
+    function reportSelectorSource(source: SelectorSource): void {
       const sidebar = findSidebarTitle(source);
       if (sidebar) {
-        if (hasNearbyCloseSidebarComment(actionNode)) {
-          return;
-        }
-
         context.report({
           node: source.node,
           messageId: 'preferSidebarHelper',
@@ -188,16 +160,14 @@ const preferSidebarActivityHelper = createRule<Options, MessageIds>({
 
     return {
       CallExpression(node) {
-        const match = matchSelectorInteraction(node, {
-          isPageExpression: isLikelyPageExpression
-        });
+        const match = matchSelectorInteraction(node);
         const source = match ? getSelectorSource(match) : null;
         if (source) {
-          reportSelectorSource(source, node);
+          reportSelectorSource(source);
         }
       }
     };
   }
 });
 
-export = preferSidebarActivityHelper;
+export = galataPreferSidebarActivityHelper;
