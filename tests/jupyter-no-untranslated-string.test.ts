@@ -196,12 +196,23 @@ ruleTester.run('no-untranslated-string', noUntranslatedString, {
     // --- title.label: raw string ---
     {
       code: `this.title.label = 'Source';`,
-      errors: [{ messageId: 'untranslatedTitleProp', data: { prop: 'label' } }]
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+      ]
     },
     // --- title.label: arbitrary receiver ---
     {
       code: `widget.title.label = 'My Panel';`,
-      errors: [{ messageId: 'untranslatedTitleProp', data: { prop: 'label' } }]
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+      ]
+    },
+    // --- title.caption: raw string ---
+    {
+      code: `this.title.caption = 'Source file';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'caption' } }
+      ]
     },
     // --- showDialog: raw string title ---
     {
@@ -232,6 +243,237 @@ ruleTester.run('no-untranslated-string', noUntranslatedString, {
     }
   ]
 });
+
+// checkProperties tests
+ruleTester.run(
+  'no-untranslated-string (checkProperties)',
+  noUntranslatedString,
+  {
+    valid: [
+      // Translated
+      { code: `const field = new MyField({ label: trans.__('My field') });` },
+      // Non-literal
+      { code: `const field = new MyField({ label: someVar });` },
+      // Empty
+      { code: `const field = new MyField({ label: '' });` },
+      // Shorthand is a reference, not a literal
+      { code: `const opts = { label };` },
+      // Computed keys are not tracked
+      { code: `const opts = { [label]: 'My field' };` },
+      // Property names outside the list are ignored
+      { code: `const opts = { id: 'my-id', className: 'my-class' };` },
+      { code: `const opts = { label: '-' };` },
+      // An empty list disables the check
+      {
+        code: `const opts = { label: 'My field' };`,
+        options: [{ checkProperties: [] }]
+      },
+      // A custom list replaces the default one
+      {
+        code: `const opts = { label: 'My field' };`,
+        options: [{ checkProperties: ['caption'] }]
+      }
+    ],
+    invalid: [
+      // A `label` on an arbitrary constructor
+      {
+        code: `
+          const field = new MyField({
+            factory,
+            label: 'My field',
+            translator: translator
+          });
+        `,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // Plain object literal
+      {
+        code: `const opts = { label: 'My field' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // `category` is checked by default too
+      {
+        code: `launcher.add({ command, category: 'Notebook' });`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'category' } }
+        ]
+      },
+      // Quoted key
+      {
+        code: `const opts = { 'label': 'My field' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // Template literal and concise arrow function
+      {
+        code: `const opts = { label: \`My field\` };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      {
+        code: `const opts = { label: () => 'My field' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // Nested properties are all reported
+      {
+        code: `const opts = { label: 'Outer', child: { label: 'Inner' } };`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } }
+        ]
+      },
+      // A custom list replaces the default one
+      {
+        code: `const opts = { label: 'My field', caption: 'My caption' };`,
+        options: [{ checkProperties: ['caption'] }],
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'caption' } }
+        ]
+      },
+      // More specific branches still win, without duplicate reports
+      {
+        code: `
+          commands.addCommand('file-download', {
+            label: 'Download',
+            execute: () => {}
+          });
+        `,
+        errors: [
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } }
+        ]
+      },
+      {
+        code: `Dialog.okButton({ label: 'Build' });`,
+        errors: [{ messageId: 'untranslatedDialogButtonLabel' }]
+      }
+    ]
+  }
+);
+
+// checkProperties applied to assignment targets
+ruleTester.run('no-untranslated-string (assignments)', noUntranslatedString, {
+  valid: [
+    { code: `widget.label = trans.__('Save');` },
+    { code: `this.label = trans.__('Save');` },
+    { code: `node.textContent = trans.__('Save');` },
+    { code: `img.alt = trans.__('A diagram');` },
+    // Not in the default list
+    { code: `el.className = 'my-class';` },
+    { code: `el.id = 'my-id';` },
+    { code: `item.textContent = '/';` },
+    { code: `title.textContent = '-';` },
+    { code: `anchor.textContent = '¶';` },
+    { code: `widget.label = ' … ';` },
+    // An empty list disables the check
+    { code: `widget.label = 'Save';`, options: [{ checkProperties: [] }] },
+    // Dropping `label` also drops the Lumino widget title check
+    {
+      code: `widget.title.label = 'Source';`,
+      options: [{ checkProperties: ['title'] }]
+    },
+    // A custom list replaces the default one
+    {
+      code: `widget.label = 'Save';`,
+      options: [{ checkProperties: ['textContent'] }]
+    },
+    // Compound assignment is not a plain assignment
+    { code: `el.textContent += 'Save';` }
+  ],
+  invalid: [
+    {
+      code: `widget.label = 'Save';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+      ]
+    },
+    {
+      code: `this.label = 'Save';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+      ]
+    },
+    {
+      code: `node.textContent = 'Save';`,
+      errors: [
+        {
+          messageId: 'untranslatedPropertyAssign',
+          data: { prop: 'textContent' }
+        }
+      ]
+    },
+    {
+      code: `img.alt = 'A diagram';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'alt' } }
+      ]
+    },
+    // A custom list replaces the default one
+    {
+      code: `el.placeholder = 'Search';`,
+      options: [{ checkProperties: ['placeholder'] }],
+      errors: [
+        {
+          messageId: 'untranslatedPropertyAssign',
+          data: { prop: 'placeholder' }
+        }
+      ]
+    },
+    // Lumino widget titles fall out of `label` / `caption` being listed
+    {
+      code: `widget.title.label = 'Source';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+      ]
+    },
+    {
+      code: `widget.title.caption = 'Source file';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'caption' } }
+      ]
+    }
+  ]
+});
+
+// enforcePunctuation applies to every position, not just JSX
+ruleTester.run(
+  'no-untranslated-string (enforcePunctuation)',
+  noUntranslatedString,
+  {
+    valid: [
+      // Blank strings stay ignored even with enforcePunctuation on
+      {
+        code: `item.textContent = '';`,
+        options: [{ enforcePunctuation: true }]
+      },
+      {
+        code: `const opts = { label: '   ' };`,
+        options: [{ enforcePunctuation: true }]
+      }
+    ],
+    invalid: [
+      {
+        code: `item.textContent = '/';`,
+        options: [{ enforcePunctuation: true }],
+        errors: [
+          {
+            messageId: 'untranslatedPropertyAssign',
+            data: { prop: 'textContent' }
+          }
+        ]
+      },
+      {
+        code: `const opts = { label: '-' };`,
+        options: [{ enforcePunctuation: true }],
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      {
+        code: `commands.addCommand('sep', { label: '-', execute: () => {} });`,
+        options: [{ enforcePunctuation: true }],
+        errors: [
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } }
+        ]
+      }
+    ]
+  }
+);
 
 // JSX tests require a separate tester with JSX parsing enabled
 const jsxRuleTester = new RuleTester({
@@ -274,22 +516,82 @@ jsxRuleTester.run('no-untranslated-string (JSX)', noUntranslatedString, {
     // --- JSX accessibility attributes must be translated ---
     {
       code: `<button aria-label={'Close dialog'} />`,
-      errors: [{ messageId: 'untranslatedJsxText' }]
+      errors: [
+        { messageId: 'untranslatedJsxAttribute', data: { prop: 'aria-label' } }
+      ]
     },
     {
       code: `<div title={'My tooltip'} />`,
-      errors: [{ messageId: 'untranslatedJsxText' }]
+      errors: [
+        { messageId: 'untranslatedJsxAttribute', data: { prop: 'title' } }
+      ]
     },
     {
       code: `<span aria-description={'Describes something'} />`,
-      errors: [{ messageId: 'untranslatedJsxText' }]
+      errors: [
+        {
+          messageId: 'untranslatedJsxAttribute',
+          data: { prop: 'aria-description' }
+        }
+      ]
     },
     {
       code: `<span aria-description="Describes something" />`,
-      errors: [{ messageId: 'untranslatedJsxText' }]
+      errors: [
+        {
+          messageId: 'untranslatedJsxAttribute',
+          data: { prop: 'aria-description' }
+        }
+      ]
     }
   ]
 });
+
+// checkProperties applied to JSX attributes
+jsxRuleTester.run(
+  'no-untranslated-string (JSX attributes)',
+  noUntranslatedString,
+  {
+    valid: [
+      { code: `<MyCheckbox label={trans.__('Enable feature')} />` },
+      // An empty list disables the check
+      {
+        code: `<MyCheckbox label="Enable feature" />`,
+        options: [{ checkProperties: [] }]
+      },
+      // A custom list replaces the default one
+      {
+        code: `<MyCheckbox label="Enable feature" />`,
+        options: [{ checkProperties: ['placeholder'] }]
+      }
+    ],
+    invalid: [
+      {
+        code: `<MyCheckbox label="Enable feature" />`,
+        errors: [
+          { messageId: 'untranslatedJsxAttribute', data: { prop: 'label' } }
+        ]
+      },
+      {
+        code: `<MyCheckbox label={'Enable feature'} />`,
+        errors: [
+          { messageId: 'untranslatedJsxAttribute', data: { prop: 'label' } }
+        ]
+      },
+      // A custom list replaces the default one
+      {
+        code: `<MyInput placeholder="Search" label="Enable feature" />`,
+        options: [{ checkProperties: ['placeholder'] }],
+        errors: [
+          {
+            messageId: 'untranslatedJsxAttribute',
+            data: { prop: 'placeholder' }
+          }
+        ]
+      }
+    ]
+  }
+);
 
 // enforcePunctuation option tests
 jsxRuleTester.run(
@@ -316,6 +618,255 @@ jsxRuleTester.run(
         code: `<span>{'.'}</span>`,
         options: [{ enforcePunctuation: true }],
         errors: [{ messageId: 'untranslatedJsxText' }]
+      }
+    ]
+  }
+);
+
+// One list drives every generic position, so a name never applies in one
+// place but not another
+ruleTester.run(
+  'no-untranslated-string (one list, every position)',
+  noUntranslatedString,
+  {
+    valid: [
+      { code: `el.setAttribute('alt', trans.__('A diagram'));` },
+      // Removing a name removes it from every position at once
+      {
+        code: `
+          img.alt = 'A diagram';
+          el.setAttribute('alt', 'A diagram');
+          const opts = { alt: 'A diagram' };
+        `,
+        options: [{ checkProperties: [] }]
+      }
+    ],
+    invalid: [
+      // `alt` used to report on assignment only
+      {
+        code: `el.setAttribute('alt', 'A diagram');`,
+        errors: [
+          { messageId: 'untranslatedSetAttribute', data: { attr: 'alt' } }
+        ]
+      },
+      {
+        code: `const opts = { alt: 'A diagram' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'alt' } }]
+      },
+      // `placeholder` is checked by default
+      {
+        code: `input.placeholder = 'Search files';`,
+        errors: [
+          {
+            messageId: 'untranslatedPropertyAssign',
+            data: { prop: 'placeholder' }
+          }
+        ]
+      },
+      {
+        code: `InputDialog.getText({ placeholder: 'Enter WMS URL' });`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'placeholder' } }
+        ]
+      },
+      // `tooltip` is common across the ecosystem
+      {
+        code: `const opts = { icon, tooltip: 'Run all cells' };`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'tooltip' } }
+        ]
+      },
+      {
+        code: `button.tooltip = 'Run all cells';`,
+        errors: [
+          { messageId: 'untranslatedPropertyAssign', data: { prop: 'tooltip' } }
+        ]
+      },
+      // `innerText` is handled like `textContent`
+      {
+        code: `node.innerText = 'Save';`,
+        errors: [
+          {
+            messageId: 'untranslatedPropertyAssign',
+            data: { prop: 'innerText' }
+          }
+        ]
+      },
+      // `title` is checked in plain object literals too
+      {
+        code: `const format = { id: 'csv', title: 'Comma separated values' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'title' } }]
+      }
+    ]
+  }
+);
+
+// Hyphenated and camelCase spellings of a name are the same entry
+ruleTester.run('no-untranslated-string (name spelling)', noUntranslatedString, {
+  valid: [
+    // Listing only `label` leaves the aria names alone in every spelling
+    {
+      code: `
+        el.ariaLabel = 'Search results';
+        el.setAttribute('aria-label', 'Search results');
+      `,
+      options: [{ checkProperties: ['label'] }]
+    }
+  ],
+  invalid: [
+    // The default list spells it `aria-label`; the DOM property matches too
+    {
+      code: `el.ariaLabel = 'Search results';`,
+      errors: [
+        { messageId: 'untranslatedPropertyAssign', data: { prop: 'ariaLabel' } }
+      ]
+    },
+    // ... and a camelCase entry matches the hyphenated attribute
+    {
+      code: `el.setAttribute('aria-label', 'Search results');`,
+      options: [{ checkProperties: ['ariaLabel'] }],
+      errors: [
+        { messageId: 'untranslatedSetAttribute', data: { attr: 'aria-label' } }
+      ]
+    }
+  ]
+});
+
+// TypeScript wrappers around a literal do not hide it
+ruleTester.run(
+  'no-untranslated-string (TypeScript wrappers)',
+  noUntranslatedString,
+  {
+    valid: [{ code: `const o = { label: trans.__('Save') as string };` }],
+    invalid: [
+      {
+        code: `const o = { label: 'Save' as const };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      {
+        code: `widget.label = 'Save' as string;`,
+        errors: [
+          { messageId: 'untranslatedPropertyAssign', data: { prop: 'label' } }
+        ]
+      },
+      {
+        code: `el.setAttribute('title', <string>'Close Tab');`,
+        errors: [
+          { messageId: 'untranslatedSetAttribute', data: { attr: 'title' } }
+        ]
+      }
+    ]
+  }
+);
+
+// The literal is reported, not the wrapper that holds it
+ruleTester.run(
+  'no-untranslated-string (report location)',
+  noUntranslatedString,
+  {
+    valid: [],
+    invalid: [
+      {
+        code: `const opts = { label: () => 'My field' };`,
+        errors: [
+          {
+            messageId: 'untranslatedProperty',
+            data: { prop: 'label' },
+            type: 'Literal',
+            column: 29,
+            endColumn: 39
+          }
+        ]
+      },
+      {
+        code: `const opts = { label: 'My field' as const };`,
+        errors: [
+          {
+            messageId: 'untranslatedProperty',
+            data: { prop: 'label' },
+            type: 'Literal',
+            column: 23,
+            endColumn: 33
+          }
+        ]
+      }
+    ]
+  }
+);
+
+// Bare numbers are never flagged, with or without enforcePunctuation
+ruleTester.run('no-untranslated-string (numbers)', noUntranslatedString, {
+  valid: [
+    { code: `const opts = { label: '1970' };` },
+    { code: `node.textContent = '100%';` },
+    { code: `node.textContent = '3.14';` },
+    {
+      code: `const opts = { label: '1970' };`,
+      options: [{ enforcePunctuation: true }]
+    },
+    // A number next to punctuation is still a number
+    {
+      code: `node.textContent = '1 / 2';`,
+      options: [{ enforcePunctuation: true }]
+    }
+  ],
+  invalid: [
+    // One letter is enough to make it text again
+    {
+      code: `node.textContent = '3 items';`,
+      errors: [
+        {
+          messageId: 'untranslatedPropertyAssign',
+          data: { prop: 'textContent' }
+        }
+      ]
+    },
+    {
+      code: `const opts = { label: 'Top 10' };`,
+      errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+    }
+  ]
+});
+
+// JSX shares the same list
+jsxRuleTester.run(
+  'no-untranslated-string (JSX, one list)',
+  noUntranslatedString,
+  {
+    valid: [{ code: `<img alt={trans.__('A diagram')} />` }],
+    invalid: [
+      // `alt` used to report on assignment only
+      {
+        code: `<img alt="A diagram" />`,
+        errors: [
+          { messageId: 'untranslatedJsxAttribute', data: { prop: 'alt' } }
+        ]
+      },
+      {
+        code: `<ToolbarButton tooltip="Run all cells" />`,
+        errors: [
+          { messageId: 'untranslatedJsxAttribute', data: { prop: 'tooltip' } }
+        ]
+      },
+      {
+        code: `<input placeholder="Search files" />`,
+        errors: [
+          {
+            messageId: 'untranslatedJsxAttribute',
+            data: { prop: 'placeholder' }
+          }
+        ]
+      },
+      // A camelCase entry matches the hyphenated JSX attribute
+      {
+        code: `<span aria-label="Close" />`,
+        options: [{ checkProperties: ['ariaLabel'] }],
+        errors: [
+          {
+            messageId: 'untranslatedJsxAttribute',
+            data: { prop: 'aria-label' }
+          }
+        ]
       }
     ]
   }
