@@ -492,6 +492,13 @@ jsxRuleTester.run('no-untranslated-string (JSX)', noUntranslatedString, {
     // --- JSX: translated expression ---
     { code: `const el = <span>{trans.__('Error message:')}</span>;` },
     {
+      code: `
+        const el = (
+          <button title={visible ? trans.__('Hide layer') : trans.__('Show layer')} />
+        );
+      `
+    },
+    {
       code: `const el = (\n  <div>\n    <span>{trans.__('Label')}</span>\n  </div>\n);`
     },
     { code: `<div className={'normal-class-string'} />` },
@@ -542,6 +549,13 @@ jsxRuleTester.run('no-untranslated-string (JSX)', noUntranslatedString, {
           messageId: 'untranslatedJsxAttribute',
           data: { prop: 'aria-description' }
         }
+      ]
+    },
+    {
+      code: `<button title={visible ? 'Hide layer' : 'Show layer'} />`,
+      errors: [
+        { messageId: 'untranslatedJsxAttribute', data: { prop: 'title' } },
+        { messageId: 'untranslatedJsxAttribute', data: { prop: 'title' } }
       ]
     }
   ]
@@ -754,6 +768,225 @@ ruleTester.run(
         errors: [
           { messageId: 'untranslatedSetAttribute', data: { attr: 'title' } }
         ]
+      }
+    ]
+  }
+);
+
+// Conditional branches in monitored positions are checked independently
+ruleTester.run(
+  'no-untranslated-string (conditional expressions)',
+  noUntranslatedString,
+  {
+    valid: [
+      {
+        code: `
+          const opts = {
+            label: visible ? trans.__('Hide layer') : trans.__('Show layer')
+          };
+        `
+      },
+      { code: `const opts = { label: visible ? '-' : '1970' };` },
+      { code: `const opts = { id: visible ? 'Hide layer' : 'Show layer' };` },
+      {
+        code: `const opts = { label: options.label ?? trans.__('Untitled') };`
+      },
+      { code: `el.title = open ? trans.__('Open') : trans.__('Closed');` },
+      // No branch is a literal
+      { code: `const opts = { label: visible ? hideLabel : showLabel };` },
+      // Blank branches are never reported
+      { code: `const opts = { label: visible ? '' : '' };` },
+      // `'Save' && other` evaluates to `other`, so the left operand is never
+      // the displayed value
+      { code: `const opts = { label: 'Save' && other };` }
+    ],
+    invalid: [
+      {
+        code: `
+          const opts = {
+            label: visible ? 'Hide layer' : 'Show layer'
+          };
+        `,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } }
+        ]
+      },
+      {
+        code: `widget.title = visible ? 'Hide layer' : trans.__('Show layer');`,
+        errors: [
+          { messageId: 'untranslatedPropertyAssign', data: { prop: 'title' } }
+        ]
+      },
+      {
+        code: `
+          commands.addCommand('toggle-layer', {
+            label: () => visible ? 'Hide layer' : 'Show layer',
+            execute: () => {}
+          });
+        `,
+        errors: [
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } },
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } }
+        ]
+      },
+      {
+        code: `showDialog({ title: visible ? 'Hide layer' : 'Show layer' });`,
+        errors: [
+          { messageId: 'untranslatedDialogOption', data: { prop: 'title' } },
+          { messageId: 'untranslatedDialogOption', data: { prop: 'title' } }
+        ]
+      },
+      // A conditional written straight into addCommand, not behind an arrow
+      {
+        code: `commands.addCommand('layer-toggle', { label: visible ? 'Hide layer' : 'Show layer' });`,
+        errors: [
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } },
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } }
+        ]
+      },
+      // Half translated, in either direction
+      {
+        code: `const opts = { label: visible ? 'Hide' : trans.__('Show') };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      {
+        code: `const opts = { label: visible ? trans.__('Hide') : 'Show' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // Assignment target
+      {
+        code: `el.title = open ? 'Open' : 'Closed';`,
+        errors: [
+          { messageId: 'untranslatedPropertyAssign', data: { prop: 'title' } },
+          { messageId: 'untranslatedPropertyAssign', data: { prop: 'title' } }
+        ]
+      },
+      // setAttribute value
+      {
+        code: `el.setAttribute('aria-label', open ? 'Open' : 'Closed');`,
+        errors: [
+          {
+            messageId: 'untranslatedSetAttribute',
+            data: { attr: 'aria-label' }
+          },
+          {
+            messageId: 'untranslatedSetAttribute',
+            data: { attr: 'aria-label' }
+          }
+        ]
+      },
+      // Nested conditionals reach every branch
+      {
+        code: `const opts = { label: a ? 'One' : b ? 'Two' : 'Three' };`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } }
+        ]
+      },
+      // Fallbacks
+      {
+        code: `const opts = { label: name ?? 'Untitled' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      {
+        code: `const opts = { label: name || 'Untitled' };`,
+        errors: [{ messageId: 'untranslatedProperty', data: { prop: 'label' } }]
+      },
+      // `&&` displays its right operand
+      {
+        code: `node.textContent = loading && 'Loading';`,
+        errors: [
+          {
+            messageId: 'untranslatedPropertyAssign',
+            data: { prop: 'textContent' }
+          }
+        ]
+      },
+      // A TypeScript cast between the operator and its operand
+      {
+        code: `commands.addCommand('pause', { label: args => (args.filter as string) || 'Breakpoints on exception' });`,
+        errors: [
+          { messageId: 'untranslatedCommandProp', data: { prop: 'label' } }
+        ]
+      },
+      // A branch holding a concise arrow
+      {
+        code: `const opts = { label: dynamic ? () => 'Hide' : 'Show' };`,
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } }
+        ]
+      },
+      // Template literals in a branch count as raw strings
+      {
+        code: 'const opts = { label: visible ? `Hide` : `Show` };',
+        errors: [
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } },
+          { messageId: 'untranslatedProperty', data: { prop: 'label' } }
+        ]
+      },
+      // The literal is reported, not the conditional that holds it
+      {
+        code: `const opts = { label: visible ? 'Hide' : 'Show' };`,
+        errors: [
+          {
+            messageId: 'untranslatedProperty',
+            data: { prop: 'label' },
+            type: 'Literal',
+            column: 33,
+            endColumn: 39
+          },
+          {
+            messageId: 'untranslatedProperty',
+            data: { prop: 'label' },
+            type: 'Literal',
+            column: 42,
+            endColumn: 48
+          }
+        ]
+      }
+    ]
+  }
+);
+
+// Conditionals in JSX
+jsxRuleTester.run(
+  'no-untranslated-string (JSX conditionals)',
+  noUntranslatedString,
+  {
+    valid: [
+      { code: `<span>{empty ? trans.__('None') : trans.__('Some')}</span>` },
+      { code: `<div className={active ? 'on' : 'off'} />` },
+      // A branch holding an element rather than a string
+      { code: `<div>{visible ? <Panel /> : null}</div>` }
+    ],
+    invalid: [
+      // Half translated
+      {
+        code: `<button title={visible ? 'Hide layer' : trans.__('Show layer')} />`,
+        errors: [
+          { messageId: 'untranslatedJsxAttribute', data: { prop: 'title' } }
+        ]
+      },
+      // Between tags
+      {
+        code: `<span>{empty ? 'No files' : 'Some files'}</span>`,
+        errors: [
+          { messageId: 'untranslatedJsxText' },
+          { messageId: 'untranslatedJsxText' }
+        ]
+      },
+      // `&&` rendering
+      {
+        code: `<span>{loading && 'Loading'}</span>`,
+        errors: [{ messageId: 'untranslatedJsxText' }]
+      },
+      // A string next to an element
+      {
+        code: `<div>{visible ? <Panel /> : 'Nothing to show'}</div>`,
+        errors: [{ messageId: 'untranslatedJsxText' }]
       }
     ]
   }

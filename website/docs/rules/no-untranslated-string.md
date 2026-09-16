@@ -118,6 +118,24 @@ new MyField({ ...options, label: trans.__('My field') });
 launcher.add({ command, category: trans.__('Notebook') });
 ```
 
+### Conditional values
+
+In every position above, a conditional is read one branch at a time, so each string that can reach the user needs its own translation call. This covers `? :`, `||`, `??` and `&&`.
+
+```tsx
+// Incorrect
+const el = <button title={visible ? 'Hide layer' : 'Show layer'} />;
+node.textContent = count ? 'Some files' : 'No files';
+const opts = { label: name ?? 'Untitled' };
+
+// Correct
+const el = (
+  <button title={visible ? trans.__('Hide layer') : trans.__('Show layer')} />
+);
+node.textContent = count ? trans.__('Some files') : trans.__('No files');
+const opts = { label: name ?? trans.__('Untitled') };
+```
+
 ## Options
 
 ```ts

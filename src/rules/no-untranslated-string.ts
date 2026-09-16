@@ -23,27 +23,50 @@ interface RawString {
 }
 
 /**
- * Returns the raw string behind a value expression
- * or null when the value is not a static string.
+ * Returns every raw string a value expression can evaluate to, empty when it
+ * can evaluate to none.
+ *
+ * A conditional has more than one result, and each one reaches the user on its
+ * own: `visible ? 'Hide' : 'Show'` displays either branch, `label ?? 'Untitled'`
+ * displays either operand. Collecting them all means a half-translated
+ * conditional reports only the branch that is still raw.
  */
-function getRawString(node: TSESTree.Node): RawString | null {
+function getRawStrings(node: TSESTree.Node): RawString[] {
   const inner = unwrapExpression(node);
-  if (inner.type === 'Literal' && typeof inner.value === 'string') {
-    return { node: inner, value: inner.value };
+  switch (inner.type) {
+    case 'Literal':
+      return typeof inner.value === 'string'
+        ? [{ node: inner, value: inner.value }]
+        : [];
+    case 'TemplateLiteral':
+      return inner.expressions.length === 0
+        ? [
+            {
+              node: inner,
+              value: inner.quasis.map(q => q.value.cooked ?? '').join('')
+            }
+          ]
+        : [];
+    case 'ArrowFunctionExpression':
+      return inner.body.type === 'BlockStatement'
+        ? []
+        : getRawStrings(inner.body);
+    case 'ConditionalExpression':
+      return [
+        ...getRawStrings(inner.consequent),
+        ...getRawStrings(inner.alternate)
+      ];
+    case 'LogicalExpression':
+      // `a && 'text'` evaluates to the left operand only when that operand is
+      // falsy, and the only falsy string is blank, which this rule never
+      // reports. `a || 'text'` and `a ?? 'text'` evaluate to either operand.
+      return [
+        ...(inner.operator === '&&' ? [] : getRawStrings(inner.left)),
+        ...getRawStrings(inner.right)
+      ];
+    default:
+      return [];
   }
-  if (inner.type === 'TemplateLiteral' && inner.expressions.length === 0) {
-    return {
-      node: inner,
-      value: inner.quasis.map(q => q.value.cooked ?? '').join('')
-    };
-  }
-  if (
-    inner.type === 'ArrowFunctionExpression' &&
-    inner.body.type !== 'BlockStatement'
-  ) {
-    return getRawString(inner.body);
-  }
-  return null;
 }
 
 /**
@@ -235,19 +258,20 @@ const noUntranslatedString = createRule({
     }
 
     /**
-     * Reports the string literal behind `value`, if there is one and it has
-     * not been reported already.
+     * Reports every string literal behind `value` that has not been reported
+     * already.
      */
     function reportRawString(
       value: TSESTree.Node,
       messageId: MessageId,
       data?: Record<string, string>
     ): void {
-      const raw = getRawString(value);
-      if (!raw || reportedNodes.has(raw.node) || !isReportableText(raw.value)) {
-        return;
+      for (const raw of getRawStrings(value)) {
+        if (reportedNodes.has(raw.node) || !isReportableText(raw.value)) {
+          continue;
+        }
+        report(raw.node, messageId, data);
       }
-      report(raw.node, messageId, data);
     }
 
     /**
