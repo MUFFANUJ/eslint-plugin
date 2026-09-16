@@ -1373,10 +1373,44 @@ ruleTester.run('require-disposable-ownership', requireDisposableOwnership, {
     {
       filename: typeAwareFilename,
       code: `new Date();`
+    },
+    {
+      // A generic class whose `dispose` is the type parameter is disposable
+      // only in the instantiations where that parameter is callable, so the
+      // answer cannot be reused across instantiations.
+      filename: typeAwareFilename,
+      code: `
+        class Box<T> {
+          readonly isDisposed = false;
+          dispose!: T;
+        }
+
+        export function keep(): void {
+          new Box<number>();
+        }
+      `
     }
   ],
 
   invalid: [
+    {
+      // The instantiation that makes `dispose` callable is a disposable, and
+      // the one on the line before it is not; answering both from whichever
+      // was seen first would lose this report.
+      filename: typeAwareFilename,
+      code: `
+        class Box<T> {
+          readonly isDisposed = false;
+          dispose!: T;
+        }
+
+        export function leak(): void {
+          new Box<number>();
+          new Box<() => void>();
+        }
+      `,
+      errors: [{ messageId: 'unmanagedDisposable' }]
+    },
     {
       // Owned option names are scoped to the parameter they came from: `payload`
       // is disposable on the first parameter only, so the second argument's

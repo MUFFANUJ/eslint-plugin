@@ -1362,6 +1362,7 @@ function isArrayExtInsertCall(
  */
 const signatureCache = new WeakMap<TSESTree.Node, ts.Signature | null>();
 const disposableTypeCache = new WeakMap<ts.Type, boolean>();
+const disposableConstructorCache = new WeakMap<ts.Symbol, boolean>();
 
 function isDisposableTypeCached(
   type: ts.Type,
@@ -2264,6 +2265,46 @@ function markDisposedSignalCallbackDisposals(
   }
 }
 
+/**
+ * Whether a call can credit any disposable that is still waiting, which decides
+ * whether it is worth asking the type checker which of its arguments take
+ * ownership.
+ *
+ * Crediting removes an entry from `pending` and does nothing for a variable
+ * that is not in it, so a call naming no waiting disposable changes nothing
+ * whatever the answer is. Both the arguments and the receiver are checked
+ * because the answer also decides whether the receiver checks in
+ * `markManagedDisposableUse` run, and those credit the receiver. Any check
+ * added there has to credit the receiver or an argument for this to hold.
+ */
+function namesPendingDisposable(
+  pending: PendingDisposableMap,
+  node: TSESTree.Node | null | undefined,
+  ownership: DisposableOwnershipContext
+): boolean {
+  return getIdentifierVariables(ownership.sourceCode, node).some(variable =>
+    pending.has(variable)
+  );
+}
+
+function mayCreditPendingDisposable(
+  pending: PendingDisposableMap,
+  node: TSESTree.CallExpression | TSESTree.NewExpression,
+  ownership: DisposableOwnershipContext
+): boolean {
+  if (
+    node.type === 'CallExpression' &&
+    node.callee.type === 'MemberExpression' &&
+    namesPendingDisposable(pending, node.callee.object, ownership)
+  ) {
+    return true;
+  }
+
+  return node.arguments.some(argument =>
+    namesPendingDisposable(pending, argument, ownership)
+  );
+}
+
 export function markManagedDisposableUse(
   pending: PendingDisposableMap,
   node: TSESTree.Node,
@@ -2316,26 +2357,31 @@ export function markManagedDisposableUse(
     markImmediateForEachOwnership(pending, node, ownership);
   }
 
+  // Crediting a disposable only ever removes an entry from `pending`, so with
+  // nothing waiting neither check below can change the outcome. Skipping them
+  // avoids resolving the callee signature, which is the most expensive query
+  // this module makes.
   if (pending.size > 0) {
     markManagedKnownOptionVariables(pending, node, ownership);
-  }
 
-  for (const argument of node.arguments) {
-    if (argument.type !== 'ObjectExpression') {
-      continue;
-    }
-    for (const property of argument.properties) {
-      if (
-        property.type === 'Property' &&
-        isOptionsObjectValueManaged(property.value, ownership)
-      ) {
-        markManagedVariables(pending, property.value, ownership);
+    for (const argument of node.arguments) {
+      if (argument.type !== 'ObjectExpression') {
+        continue;
+      }
+      for (const property of argument.properties) {
+        if (
+          property.type === 'Property' &&
+          namesPendingDisposable(pending, property.value, ownership) &&
+          isOptionsObjectValueManaged(property.value, ownership)
+        ) {
+          markManagedVariables(pending, property.value, ownership);
+        }
       }
     }
   }
 
   const ownershipArguments =
-    pending.size > 0
+    pending.size > 0 && mayCreditPendingDisposable(pending, node, ownership)
       ? getOwnershipArguments(node as TSESTree.CallExpression, ownership)
       : [];
   if (ownershipArguments.length > 0) {
@@ -2442,6 +2488,81 @@ export function isDisposableType(
     hasDisposableHeritage(type) ||
     hasDisposableShape(apparentType, checker)
   );
+}
+
+/**
+ * A class with no type parameters constructs the same type everywhere, so its
+ * instance type answers for every `new` of it. A generic one does not: `dispose`
+ * can be declared as the type parameter, which is callable in one instantiation
+ * and not in another, so those are asked about one expression at a time.
+ */
+function nonGenericClassSymbol(
+  symbol: ts.Symbol | undefined
+): ts.Symbol | undefined {
+  if (!symbol || !(symbol.flags & ts.SymbolFlags.Class)) {
+    return undefined;
+  }
+  const declarations = symbol.declarations ?? [];
+  const generic = declarations.some(
+    declaration =>
+      (ts.isClassDeclaration(declaration) ||
+        ts.isClassExpression(declaration)) &&
+      (declaration.typeParameters?.length ?? 0) > 0
+  );
+  return generic ? undefined : symbol;
+}
+
+/**
+ * Whether a `new` expression creates a disposable, by the type it constructs
+ * when type information is available and by the known constructor names
+ * otherwise.
+ *
+ * A class is constructed all over a codebase, and for a class with no type
+ * parameters what it constructs is a property of the class rather than of any
+ * one call, so the answer is kept per constructor symbol. Resolving that symbol
+ * is name resolution and reading the instance type off it is a lookup, while
+ * typing the `new` expression resolves a construct signature.
+ */
+export function constructsDisposable(
+  node: TSESTree.NewExpression,
+  ownership: DisposableOwnershipContext
+): boolean {
+  const { checker, services } = ownership;
+  if (checker && services) {
+    try {
+      const tsNode = services.esTreeNodeToTSNodeMap.get(
+        node as TSESTree.Node
+      ) as ts.NewExpression;
+      let symbol = checker.getSymbolAtLocation(tsNode.expression);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) {
+        // An imported class resolves to a different alias symbol in every
+        // file; the class it points at is shared by all of them.
+        symbol = checker.getAliasedSymbol(symbol);
+      }
+      const classSymbol = nonGenericClassSymbol(symbol);
+      if (classSymbol) {
+        const cached = disposableConstructorCache.get(classSymbol);
+        if (cached !== undefined) {
+          return cached || isDisposableConstructor(node);
+        }
+      }
+      const result = isDisposableTypeCached(
+        classSymbol
+          ? checker.getDeclaredTypeOfSymbol(classSymbol)
+          : checker.getTypeAtLocation(tsNode),
+        checker
+      );
+      if (classSymbol) {
+        disposableConstructorCache.set(classSymbol, result);
+      }
+      if (result) {
+        return true;
+      }
+    } catch {
+      // Fall back to the known Lumino disposable constructors below.
+    }
+  }
+  return isDisposableConstructor(node);
 }
 
 export function shouldCheckReturnedDisposable(

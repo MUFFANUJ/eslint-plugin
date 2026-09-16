@@ -3,7 +3,6 @@
  * Distributed under the terms of the Modified BSD License.
  */
 
-import { TSESTree } from '@typescript-eslint/types';
 import { ESLintUtils, ParserServices } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 import { createRule } from '../utils/create-rule';
@@ -11,10 +10,9 @@ import {
   addPendingDisposable,
   DEFAULT_OWNERSHIP_FUNCTION_NAMES,
   DisposableOwnershipContext,
+  constructsDisposable,
   getAssignedVariable,
-  isDisposableConstructor,
   isDisposableExpressionManaged,
-  isDisposableType,
   isDisposedByNestedFunction,
   isExportedVariable,
   isInJupyterPluginActivate,
@@ -79,21 +77,6 @@ const requireDisposableOwnership = createRule({
       services = null;
     }
 
-    function isDisposableCreation(node: TSESTree.NewExpression): boolean {
-      if (checker && services) {
-        try {
-          const tsNode = services.esTreeNodeToTSNodeMap.get(node);
-          const type = checker.getTypeAtLocation(tsNode);
-          if (isDisposableType(type, checker)) {
-            return true;
-          }
-        } catch {
-          // Fall back to the known Lumino disposable constructors below.
-        }
-      }
-      return isDisposableConstructor(node);
-    }
-
     const ownership: DisposableOwnershipContext = {
       sourceCode: context.sourceCode,
       checker,
@@ -125,7 +108,7 @@ const requireDisposableOwnership = createRule({
           return;
         }
 
-        if (!isDisposableCreation(node)) {
+        if (!constructsDisposable(node, ownership)) {
           return;
         }
 

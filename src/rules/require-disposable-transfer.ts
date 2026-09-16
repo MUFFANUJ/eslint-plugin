@@ -237,16 +237,22 @@ const requireDisposableTransfer = createRule({
         if (
           isInJupyterPluginActivate(node, ownership) ||
           isIgnoredReturn(node) ||
-          !shouldCheckReturnedDisposable(node) ||
-          isDisposableExpressionManaged(node, ownership)
+          !shouldCheckReturnedDisposable(node)
         ) {
           return;
         }
 
+        // The name test reads the call itself, while the two tests after it
+        // ask the type checker about the callee, so a call this rule would
+        // never report is dropped before any of that work happens.
         if (
           !checkAllDisposableReturns &&
           !isLikelyDisposableFactoryCall(node)
         ) {
+          return;
+        }
+
+        if (isDisposableExpressionManaged(node, ownership)) {
           return;
         }
 

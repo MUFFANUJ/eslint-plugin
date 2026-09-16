@@ -197,8 +197,17 @@ function readFileInfo(filePath: string): FileInfo | null {
 /**
  * Sums the code size of a module and of every relative module it statically
  * imports. Returns null when the file cannot be read.
+ *
+ * Callers which only compare the total against a threshold can pass it as
+ * `budget`. The walk then stops as soon as the running total reaches it and
+ * returns that partial sum, because a module already over the threshold stays
+ * over it however much more its imports hold. The files behind the threshold
+ * are never read.
  */
-export function getTransitiveCodeSize(entry: string): number | null {
+export function getTransitiveCodeSize(
+  entry: string,
+  budget = Number.POSITIVE_INFINITY
+): number | null {
   const root = readFileInfo(entry);
   if (!root) {
     return null;
@@ -219,6 +228,9 @@ export function getTransitiveCodeSize(entry: string): number | null {
       return null;
     }
     total += info.size;
+    if (total >= budget) {
+      return total;
+    }
     if (depth >= MAX_DEPTH || seen.size >= MAX_FILES) {
       continue;
     }
