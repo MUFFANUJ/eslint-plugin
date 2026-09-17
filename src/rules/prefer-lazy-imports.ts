@@ -20,7 +20,7 @@ import {
   DEFAULT_ALLOWED_PACKAGES,
   DEFAULT_DEFERRED_PACKAGES,
   DEFAULT_MINIMUM_SIZE,
-  isEagerlyReached,
+  getReach,
   isInInteractionCallback,
   isInPluginTokenList,
   LazyImportOptions,
@@ -58,6 +58,10 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
       eagerModuleLevelUse:
         "'{{ source }}' is used at module level in a plugin module, so it loads before the application starts. " +
         "Move the usage into a function and import it there with `await import('{{ source }}')`.",
+      usedInAutostartActivate:
+        "'{{ source }}' is imported at the top of a plugin module and used in `activate()` of an autostart plugin, so it loads before the application starts either way. " +
+        'Do not `await import(...)` inside `activate()`: that delays the whole application start. ' +
+        "Register the extension point synchronously and load '{{ source }}' in the callback that first needs it, or ignore this import if activation needs it at once.",
       preferLazyImportInteraction:
         "'{{ source }}' is only used inside user-interaction handlers, so it is not needed until the user acts. " +
         'Import it where it is used instead: `{{ snippet }}`',
@@ -68,6 +72,11 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
         "'{{ source }}' is in `deferredPackages`, so it must only be loaded with `await import()`, but it is used while this module is evaluated. " +
         "Move the usage into a function and import it there with `await import('{{ source }}')`. " +
         'If this module is itself only loaded with `import()`, disable the rule for this import.',
+      deferredPackageAutostartUse:
+        "'{{ source }}' is imported at the top of a plugin module and used in `activate()` of an autostart plugin, so it loads before the application starts either way. " +
+        'It is also in `deferredPackages`, so it must only be loaded with `await import()`. ' +
+        'Do not `await import(...)` inside `activate()`: that delays the whole application start. ' +
+        "Register the extension point synchronously and load '{{ source }}' in the callback that first needs it, or ignore this import if activation needs it at once.",
       deferredPackageNotTypeOnly:
         "'{{ source }}' is in `deferredPackages`, and this import has no runtime use, but it is not written as `import type`, so a build with `verbatimModuleSyntax` or plain JavaScript loads the package anyway. " +
         'Remove the import, or make it `import type`.',
@@ -324,17 +333,40 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
 
       let deferrable = 0;
       let eager = 0;
+      let activation = 0;
       let tokenList = 0;
       for (const { identifier } of references) {
         if (isInPluginTokenList(identifier)) {
           // A token in `requires`, `optional` or `provides` is read when the
           // plugin is registered, so it can never be deferred.
           tokenList += 1;
-        } else if (isEagerlyReached(identifier, context.sourceCode)) {
-          eager += 1;
-        } else {
-          deferrable += 1;
+          continue;
         }
+        switch (getReach(identifier, context.sourceCode)) {
+          case 'module':
+            eager += 1;
+            break;
+          case 'activation':
+            activation += 1;
+            break;
+          default:
+            deferrable += 1;
+        }
+      }
+
+      if (tokenList === 0 && eager === 0 && activation > 0) {
+        // `Application.start` waits for every autostart plugin before it
+        // attaches the shell, so the module is fetched before the application
+        // starts whatever this file does, and an `await import()` inside
+        // `activate` would hold the start back by one more request. The usual
+        // snippet is therefore the wrong advice here, even when other uses
+        // sit in callbacks which could defer it.
+        reportUnlessTooSmall({
+          node: declarations[0],
+          messageId: 'usedInAutostartActivate',
+          data: { source }
+        });
+        return;
       }
 
       if (tokenList === 0 && eager === 0 && deferrable > 0) {
@@ -400,15 +432,38 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
         return;
       }
 
-      const eager = references.some(
-        ({ identifier }) =>
-          isInPluginTokenList(identifier) ||
-          isEagerlyReached(identifier, context.sourceCode)
-      );
+      let eager = false;
+      let activation = false;
+      for (const { identifier } of references) {
+        if (isInPluginTokenList(identifier)) {
+          eager = true;
+          break;
+        }
+        const reach = getReach(identifier, context.sourceCode);
+        if (reach === 'module') {
+          eager = true;
+          break;
+        }
+        if (reach === 'activation') {
+          activation = true;
+        }
+      }
       if (eager) {
         context.report({
           node: loading[0],
           messageId: 'deferredPackageEagerUse',
+          data: { source }
+        });
+        return;
+      }
+      if (activation) {
+        // The snippet would put the `await import()` into `activate`, which
+        // holds the whole start back, so the advice is the one for any import
+        // used during the activation of an autostart plugin, with the list
+        // named as well.
+        context.report({
+          node: loading[0],
+          messageId: 'deferredPackageAutostartUse',
           data: { source }
         });
         return;

@@ -314,69 +314,149 @@ function getFunctionVariable(
   return null;
 }
 
-const MAX_CALL_DEPTH = 6;
+/**
+ * When a node runs, relative to the application starting. `module` is while
+ * the module is evaluated. `activation` is inside the `activate` of a plugin
+ * which declares `autoStart: true`, which `Application.start` waits for before
+ * it attaches the shell. `deferred` is any later point the rule cannot place,
+ * such as a command or a method call.
+ */
+export type Reach = 'module' | 'activation' | 'deferred';
 
 /**
- * Returns true when the node runs while the module is evaluated, either
- * directly or through a named function which is called at module level.
+ * Returns true when the node is the `activate` entry of a plugin object which
+ * declares `autoStart: true`. Only the literal `true` counts: a plugin with
+ * `autoStart: 'defer'` is activated after the shell is attached. The object is
+ * read as written, so a spread or a computed key is not followed, as in every
+ * other plugin-shape check in this plugin.
  */
-export function isEagerlyReached(
+function isAutostartActivateProperty(node: TSESTree.Node | undefined): boolean {
+  if (!node || node.type !== 'Property' || node.computed) {
+    return false;
+  }
+  const object = node.parent;
+  if (object?.type !== 'ObjectExpression') {
+    return false;
+  }
+  const properties = getObjectProperties(object);
+  if (properties.get('activate') !== node) {
+    return false;
+  }
+  const autoStart = properties.get('autoStart');
+  return (
+    !!autoStart &&
+    autoStart.value.type === 'Literal' &&
+    autoStart.value.value === true
+  );
+}
+
+/**
+ * Returns true when a value sits directly in the `activate` entry of an
+ * autostart plugin: the function written in place, or the name of one
+ * declared elsewhere in the file, as in `activate: activateFoo` or the
+ * shorthand `{ activate }`.
+ */
+function isAutostartActivateValue(node: TSESTree.Node): boolean {
+  const parent = node.parent;
+  return (
+    parent?.type === 'Property' &&
+    parent.value === node &&
+    isAutostartActivateProperty(parent)
+  );
+}
+
+/**
+ * Returns the node whose position decides when the function referenced by
+ * `identifier` runs, or null when the reference does not call it. `run()` and
+ * `new Runner()` reach the body directly, `run.call()` and `run.apply()` do as
+ * well, and `list.map(run)` hands it to something which calls it straight
+ * away. Passing the function anywhere else does not say when, or whether, it
+ * runs.
+ */
+function getInvocation(
+  identifier: TSESLint.Scope.Reference['identifier']
+): TSESTree.Node | null {
+  const parent = identifier.parent;
+  if (!parent) {
+    return null;
+  }
+  if (
+    (parent.type === 'CallExpression' || parent.type === 'NewExpression') &&
+    parent.callee === identifier
+  ) {
+    return identifier;
+  }
+  if (
+    parent.type === 'MemberExpression' &&
+    parent.object === identifier &&
+    !parent.computed &&
+    parent.property.type === 'Identifier' &&
+    (parent.property.name === 'call' || parent.property.name === 'apply') &&
+    parent.parent?.type === 'CallExpression' &&
+    parent.parent.callee === parent
+  ) {
+    return parent.parent;
+  }
+  if (
+    (parent.type === 'CallExpression' || parent.type === 'NewExpression') &&
+    parent.arguments.includes(identifier as TSESTree.CallExpressionArgument) &&
+    invokesItsCallback(parent)
+  ) {
+    return identifier;
+  }
+  return null;
+}
+
+/**
+ * Finds when the node runs: while the module is evaluated, during the
+ * activation of an autostart plugin, or only later. A node inside a named
+ * function is placed by the function's call sites, followed transitively, and
+ * the earliest of them wins, so a helper called from both `activate` and a
+ * command runs during activation. Each function is explored once per walk,
+ * which ends a cycle and bounds the cost by the number of functions in the
+ * file, so a chain of helpers is followed however long it is.
+ */
+export function getReach(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
-  seen: Set<TSESTree.Node> = new Set(),
-  depth = 0
-): boolean {
+  seen: Set<TSESTree.Node> = new Set()
+): Reach {
   const boundary = findDeferringBoundary(node);
   if (boundary === null) {
-    return true;
+    return 'module';
   }
-  if (boundary === 'field' || depth >= MAX_CALL_DEPTH || seen.has(boundary)) {
-    return false;
+  if (boundary === 'field' || seen.has(boundary)) {
+    return 'deferred';
   }
   seen.add(boundary);
 
+  if (isAutostartActivateValue(boundary)) {
+    return 'activation';
+  }
   const variable = getFunctionVariable(boundary, sourceCode);
   if (!variable) {
-    return false;
+    return 'deferred';
   }
-  return variable.references.some(reference => {
-    const identifier = reference.identifier;
-    const parent = identifier.parent;
-    if (!parent) {
-      return false;
+  let reach: Reach = 'deferred';
+  for (const { identifier } of variable.references) {
+    let result: Reach;
+    const invocation = getInvocation(identifier);
+    if (invocation) {
+      result = getReach(invocation, sourceCode, seen);
+    } else if (isAutostartActivateValue(identifier)) {
+      // The plugin registry calls the function when the application starts.
+      result = 'activation';
+    } else {
+      continue;
     }
-    // `run()` and `new Runner()` reach the body directly.
-    if (
-      (parent.type === 'CallExpression' || parent.type === 'NewExpression') &&
-      parent.callee === identifier
-    ) {
-      return isEagerlyReached(identifier, sourceCode, seen, depth + 1);
+    if (result === 'module') {
+      return 'module';
     }
-    // `run.call(...)` and `run.apply(...)` reach it as well.
-    if (
-      parent.type === 'MemberExpression' &&
-      parent.object === identifier &&
-      !parent.computed &&
-      parent.property.type === 'Identifier' &&
-      (parent.property.name === 'call' || parent.property.name === 'apply') &&
-      parent.parent?.type === 'CallExpression' &&
-      parent.parent.callee === parent
-    ) {
-      return isEagerlyReached(parent.parent, sourceCode, seen, depth + 1);
+    if (result === 'activation') {
+      reach = 'activation';
     }
-    // `list.map(run)` passes it to something which calls it straight away.
-    if (
-      (parent.type === 'CallExpression' || parent.type === 'NewExpression') &&
-      parent.arguments.includes(
-        identifier as TSESTree.CallExpressionArgument
-      ) &&
-      invokesItsCallback(parent)
-    ) {
-      return isEagerlyReached(identifier, sourceCode, seen, depth + 1);
-    }
-    // Passing the function anywhere else does not say when, or whether, it runs.
-    return false;
-  });
+  }
+  return reach;
 }
 
 /**
