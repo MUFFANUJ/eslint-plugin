@@ -18,6 +18,7 @@ import {
   ALWAYS_IGNORED_IMPORTS,
   buildDeferredImportSnippet,
   DEFAULT_ALLOWED_PACKAGES,
+  DEFAULT_DEFERRED_PACKAGES,
   DEFAULT_MINIMUM_SIZE,
   isEagerlyReached,
   isInInteractionCallback,
@@ -34,6 +35,7 @@ import { createRule } from '../utils/create-rule';
 
 const DEFAULT_OPTIONS: LazyImportOptions = {
   allowedPackages: DEFAULT_ALLOWED_PACKAGES,
+  deferredPackages: DEFAULT_DEFERRED_PACKAGES,
   ignoreImports: [],
   minimumSize: DEFAULT_MINIMUM_SIZE,
   reportInteractionCallbacks: false,
@@ -58,7 +60,20 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
         "Move the usage into a function and import it there with `await import('{{ source }}')`.",
       preferLazyImportInteraction:
         "'{{ source }}' is only used inside user-interaction handlers, so it is not needed until the user acts. " +
-        'Import it where it is used instead: `{{ snippet }}`'
+        'Import it where it is used instead: `{{ snippet }}`',
+      deferredPackageImport:
+        "'{{ source }}' is in `deferredPackages`, so it must only be loaded with `await import()`, but this static import loads it together with the module. " +
+        'Import it where it is used instead: `{{ snippet }}`',
+      deferredPackageEagerUse:
+        "'{{ source }}' is in `deferredPackages`, so it must only be loaded with `await import()`, but it is used while this module is evaluated. " +
+        "Move the usage into a function and import it there with `await import('{{ source }}')`. " +
+        'If this module is itself only loaded with `import()`, disable the rule for this import.',
+      deferredPackageNotTypeOnly:
+        "'{{ source }}' is in `deferredPackages`, and this import has no runtime use, but it is not written as `import type`, so a build with `verbatimModuleSyntax` or plain JavaScript loads the package anyway. " +
+        'Remove the import, or make it `import type`.',
+      deferredPackageReExport:
+        "'{{ source }}' is in `deferredPackages`, so it must only be loaded with `await import()`, but this re-export loads it together with the module. " +
+        "Remove the re-export and use `await import('{{ source }}')` where the package is needed."
     },
     schema: [
       {
@@ -70,6 +85,13 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
             default: DEFAULT_ALLOWED_PACKAGES,
             description:
               'Packages already loaded eagerly by the application, which are therefore free to import at the top of a plugin module. Supports `*` wildcards, and `!` to deny a package whatever else in the list matches it. Replaces the default list.'
+          },
+          deferredPackages: {
+            type: 'array',
+            items: { type: 'string' },
+            default: DEFAULT_DEFERRED_PACKAGES,
+            description:
+              'Packages which must only be loaded with `await import()`. A static import of one is reported in every module, however its bindings are used. Matched like `allowedPackages`, takes precedence over it and over the manifest, and replaces the default list.'
           },
           ignoreImports: {
             type: 'array',
@@ -107,6 +129,7 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
   create(context, [options]) {
     const {
       allowedPackages,
+      deferredPackages,
       ignoreImports,
       minimumSize,
       reportInteractionCallbacks,
@@ -142,20 +165,41 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
     // Packages this extension declares as provided by the application, read
     // from `jupyterlab.sharedPackages` in its own manifest. They extend
     // `allowedPackages` rather than replacing it, and are only looked up once
-    // the file turns out to need checking.
+    // an import turns out to need them.
     let hostProvided: string[] | null = null;
 
     /**
-     * Returns true when the specifier is exempt from the rule, either because
-     * the application loads it eagerly anyway or because it was ignored
-     * explicitly.
+     * Returns true when the specifier is exempt from the usage check, either
+     * because the application loads it eagerly anyway or because it was
+     * ignored explicitly.
      */
     function isExempt(source: string): boolean {
-      return (
+      if (
         matchesPatterns(source, ALWAYS_IGNORED_IMPORTS) ||
         matchesPatterns(source, allowedPackages) ||
-        matchesPatterns(source, hostProvided ?? []) ||
         matchesPatterns(source, ignoreImports)
+      ) {
+        return true;
+      }
+      if (hostProvided === null) {
+        hostProvided = getHostProvidedPackages(context.filename);
+      }
+      return matchesPatterns(source, hostProvided);
+    }
+
+    /**
+     * Returns true when the package must only be loaded with `import()`. The
+     * list wins over `allowedPackages` and the manifest, which describe what
+     * the application loads at startup, since this one describes what it
+     * keeps out of startup on purpose. `ignoreImports` still wins as the
+     * explicit way to skip a specifier, and an asset from such a package is
+     * left to the bundler like any other asset.
+     */
+    function isDeferredPackage(source: string): boolean {
+      return (
+        matchesPatterns(source, deferredPackages) &&
+        !matchesPatterns(source, ALWAYS_IGNORED_IMPORTS) &&
+        !matchesPatterns(source, ignoreImports)
       );
     }
 
@@ -314,6 +358,92 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
       }
     }
 
+    /**
+     * Reports a static import of a package which must only be loaded with
+     * `import()`. Where the bindings are used makes no difference here: a
+     * binding used only inside a function still loads the package together
+     * with this module, and whether this module is part of the startup bundle
+     * cannot be seen from this file. So the import is reported wherever it
+     * appears, and the usage only picks the advice.
+     *
+     * Only `import type` is exempt, and that never gets here. A value import
+     * whose bindings have no runtime use, an inline `type` specifier included,
+     * is erased by TypeScript without `verbatimModuleSyntax` but kept with it
+     * (`import { type X }` becomes `import {} from '...'`), and JavaScript
+     * never erases anything, so it counts as loading the package as well.
+     */
+    function checkDeferredPackage(
+      source: string,
+      declarations: TSESTree.ImportDeclaration[]
+    ): void {
+      // The snippet is built from the declarations with a runtime use, plus a
+      // side-effect import, which has nothing to erase. Each of the others is
+      // reported on its own line, because deleting the reported declarations
+      // would leave it behind, still loading the package under
+      // `verbatimModuleSyntax` or in JavaScript.
+      const loading: TSESTree.ImportDeclaration[] = [];
+      const references: TSESLint.Scope.Reference[] = [];
+      for (const declaration of declarations) {
+        const own = getValueReferences(declaration);
+        if (own.length > 0 || declaration.specifiers.length === 0) {
+          loading.push(declaration);
+          references.push(...own);
+        } else {
+          context.report({
+            node: declaration,
+            messageId: 'deferredPackageNotTypeOnly',
+            data: { source }
+          });
+        }
+      }
+      if (loading.length === 0) {
+        return;
+      }
+
+      const eager = references.some(
+        ({ identifier }) =>
+          isInPluginTokenList(identifier) ||
+          isEagerlyReached(identifier, context.sourceCode)
+      );
+      if (eager) {
+        context.report({
+          node: loading[0],
+          messageId: 'deferredPackageEagerUse',
+          data: { source }
+        });
+        return;
+      }
+      context.report({
+        node: loading[0],
+        messageId: 'deferredPackageImport',
+        data: { source, snippet: buildDeferredImportSnippet(loading) }
+      });
+    }
+
+    /**
+     * A re-export of a package which must only be loaded with `import()` is a
+     * finding in itself, `export { type X } from` included: only `export type`
+     * is erased under `verbatimModuleSyntax`, the rest stays as
+     * `export {} from '...'` and loads the source. For any other source a
+     * value re-export keeps it in the startup bundle, so deferring the
+     * matching import would gain nothing and the usage check skips it.
+     */
+    function checkReExport(
+      node: TSESTree.ExportNamedDeclaration | TSESTree.ExportAllDeclaration,
+      source: string,
+      hasValueSpecifier: boolean
+    ): void {
+      if (isDeferredPackage(source)) {
+        context.report({
+          node,
+          messageId: 'deferredPackageReExport',
+          data: { source }
+        });
+      } else if (hasValueSpecifier) {
+        reExportedSources.add(source);
+      }
+    }
+
     return {
       VariableDeclarator(node) {
         if (
@@ -350,38 +480,26 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
         }
       },
       ImportDeclaration(node) {
-        if (
-          node.parent.type === 'Program' &&
-          node.importKind !== 'type' &&
-          // A side-effect import has no binding to move into a function.
-          node.specifiers.length > 0
-        ) {
+        if (node.parent.type === 'Program' && node.importKind !== 'type') {
           importDeclarations.push(node);
         }
       },
       ExportNamedDeclaration(node) {
-        // A value re-export keeps the source in the startup bundle, so nothing
-        // is gained by deferring the import of it.
         if (!node.source || node.exportKind === 'type') {
           return;
         }
-        const hasValueSpecifier = node.specifiers.some(
-          specifier => specifier.exportKind !== 'type'
+        checkReExport(
+          node,
+          node.source.value,
+          node.specifiers.some(specifier => specifier.exportKind !== 'type')
         );
-        if (hasValueSpecifier) {
-          reExportedSources.add(node.source.value);
-        }
       },
       ExportAllDeclaration(node) {
         if (node.exportKind !== 'type') {
-          reExportedSources.add(node.source.value);
+          checkReExport(node, node.source.value, true);
         }
       },
       'Program:exit'() {
-        if (!isPluginModule && !reportInteractionCallbacks) {
-          return;
-        }
-        hostProvided = getHostProvidedPackages(context.filename);
         const bySource = new Map<string, TSESTree.ImportDeclaration[]>();
         for (const declaration of importDeclarations) {
           const source = declaration.source.value;
@@ -392,8 +510,21 @@ const jupyterPreferLazyImports = createRule<[LazyImportOptions], string>({
             bySource.set(source, [declaration]);
           }
         }
+        // A package which must stay deferred is checked in every module. The
+        // usage check needs a plugin module, or the interaction option.
+        const checkUsage = isPluginModule || reportInteractionCallbacks;
         for (const [source, declarations] of bySource) {
-          checkSource(source, declarations);
+          if (isDeferredPackage(source)) {
+            checkDeferredPackage(source, declarations);
+          } else if (checkUsage) {
+            // A side-effect import has no binding to move into a function.
+            const withBindings = declarations.filter(
+              declaration => declaration.specifiers.length > 0
+            );
+            if (withBindings.length > 0) {
+              checkSource(source, withBindings);
+            }
+          }
         }
       }
     };

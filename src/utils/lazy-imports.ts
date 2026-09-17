@@ -12,8 +12,9 @@ import { getObjectProperties, isCallableProperty } from './plugin-utils';
  * rspack driven by `@jupyter/builder`, with Module Federation sharing packages
  * between the application and the extensions it loads. Webpack behaves the same
  * way here. A different bundler classifies assets differently, and a different
- * application shares a different set of packages, so `allowedPackages` and
- * `minimumSize` are both configurable.
+ * application shares a different set of packages and defers a different set,
+ * so `allowedPackages`, `deferredPackages` and `minimumSize` are all
+ * configurable.
  */
 
 type FunctionNode =
@@ -23,6 +24,7 @@ type FunctionNode =
 
 export interface LazyImportOptions {
   allowedPackages: string[];
+  deferredPackages: string[];
   ignoreImports: string[];
   minimumSize: number;
   reportInteractionCallbacks: boolean;
@@ -63,6 +65,24 @@ export const DEFAULT_ALLOWED_PACKAGES = [
   'react',
   'react-dom',
   'yjs'
+];
+
+/**
+ * Packages which JupyterLab itself loads only with `import()`, so a static
+ * import anywhere in an extension puts them back on the startup path.
+ *
+ * A subpath such as `@codemirror/legacy-modes/mode/python` matches through its
+ * owning package. Entries prefixed with `!` are exempt even when another
+ * pattern matches them.
+ */
+export const DEFAULT_DEFERRED_PACKAGES = [
+  '@lumino/datagrid',
+  '@codemirror/lang-*',
+  '@codemirror/legacy-modes',
+  '@codemirror/search',
+  '@rjsf/validator-ajv8',
+  'mermaid',
+  'react-toastify'
 ];
 
 /**
