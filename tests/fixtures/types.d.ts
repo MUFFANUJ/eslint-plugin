@@ -16,6 +16,13 @@ export declare class ServiceManagerPlugin<T> {}
 export declare namespace IDebugger {
   interface ISidebar {}
 }
+
+export declare namespace IRenderMime {
+  interface IExtension {
+    readonly id: string;
+    readonly rendererFactory: unknown;
+  }
+}
 export declare const IDebuggerSidebar: Token<IDebugger.ISidebar>;
 
 export declare interface INotebookTracker {}

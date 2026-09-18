@@ -7,6 +7,7 @@ import * as jsoncParser from 'jsonc-eslint-parser';
 import pluginActivationArgs from './rules/plugin-activation-args';
 import commandDescribedBy from './rules/command-described-by';
 import pluginDescription from './rules/plugin-description';
+import pluginIdConvention from './rules/plugin-id-convention';
 import noTranslationConcatenation from './rules/no-translation-concatenation';
 import noDynamicTranslation from './rules/no-dynamic-translation';
 import tokenFormat from './rules/token-format';
@@ -32,6 +33,7 @@ const plugin = {
     'plugin-activation-args': pluginActivationArgs,
     'command-described-by': commandDescribedBy,
     'plugin-description': pluginDescription,
+    'plugin-id-convention': pluginIdConvention,
     'no-translation-concatenation': noTranslationConcatenation,
     'no-dynamic-translation': noDynamicTranslation,
     'token-format': tokenFormat,
@@ -61,6 +63,7 @@ const plugin = {
           'jupyter/plugin-activation-args': 'error',
           'jupyter/command-described-by': 'warn',
           'jupyter/plugin-description': 'warn',
+          'jupyter/plugin-id-convention': 'warn',
           'jupyter/no-translation-concatenation': 'error',
           'jupyter/no-dynamic-translation': 'warn',
           'jupyter/token-format': 'error',
@@ -91,8 +94,10 @@ const plugin = {
           'jupyter/galata-prefer-menu-helper': 'warn',
           'jupyter/galata-prefer-notebook-cell-helper': 'warn',
           'jupyter/galata-prefer-sidebar-activity-helper': 'warn',
-          // Test files declare mock plugins; deferring their imports is pointless.
-          'jupyter/prefer-lazy-imports': 'off'
+          // Test files declare mock plugins; deferring their imports is
+          // pointless and their IDs are never used to disable an extension.
+          'jupyter/prefer-lazy-imports': 'off',
+          'jupyter/plugin-id-convention': 'off'
         }
       }
     ],
@@ -101,6 +106,7 @@ const plugin = {
         'jupyter/plugin-activation-args': 'error',
         'jupyter/command-described-by': 'warn',
         'jupyter/plugin-description': 'warn',
+        'jupyter/plugin-id-convention': 'warn',
         'jupyter/no-translation-concatenation': 'error',
         'jupyter/no-dynamic-translation': 'warn',
         'jupyter/token-format': 'error',
@@ -130,7 +136,8 @@ const plugin = {
             'jupyter/galata-prefer-menu-helper': 'warn',
             'jupyter/galata-prefer-notebook-cell-helper': 'warn',
             'jupyter/galata-prefer-sidebar-activity-helper': 'warn',
-            'jupyter/prefer-lazy-imports': 'off'
+            'jupyter/prefer-lazy-imports': 'off',
+            'jupyter/plugin-id-convention': 'off'
           }
         }
       ]

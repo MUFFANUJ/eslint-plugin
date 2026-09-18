@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readPackageJson } from './package-json';
 
 /** How far to look upwards for the labextension manifest. */
 const MAX_LEVELS = 12;
@@ -29,27 +30,17 @@ const manifestPathCache = new Map<string, string | null>();
  * which removes the package from the shared scope altogether.
  */
 function readManifest(manifestPath: string): ManifestInfo | null {
-  let mtimeMs: number;
-  try {
-    mtimeMs = fs.statSync(manifestPath).mtimeMs;
-  } catch {
+  const manifest = readPackageJson(manifestPath);
+  if (!manifest) {
     return null;
   }
 
   const cached = manifestCache.get(manifestPath);
-  if (cached && cached.mtimeMs === mtimeMs) {
+  if (cached && cached.mtimeMs === manifest.mtimeMs) {
     return cached;
   }
 
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  } catch {
-    manifestCache.set(manifestPath, null);
-    return null;
-  }
-
-  const jupyterlab = data.jupyterlab as
+  const jupyterlab = manifest.data.jupyterlab as
     | { sharedPackages?: Record<string, unknown> }
     | undefined;
   if (!jupyterlab || typeof jupyterlab !== 'object') {
@@ -70,7 +61,7 @@ function readManifest(manifestPath: string): ManifestInfo | null {
     }
   }
 
-  const info: ManifestInfo = { mtimeMs, hostProvided };
+  const info: ManifestInfo = { mtimeMs: manifest.mtimeMs, hostProvided };
   manifestCache.set(manifestPath, info);
   return info;
 }

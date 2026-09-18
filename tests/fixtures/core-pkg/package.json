@@ -1,0 +1,6 @@
+{
+  "name": "@jupyterlab/core-package",
+  "jupyterlab": {
+    "coreDependency": true
+  }
+}

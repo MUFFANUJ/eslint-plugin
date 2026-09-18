@@ -1,0 +1,6 @@
+{
+  "name": "@jupyterlab/example-extension",
+  "jupyterlab": {
+    "extension": true
+  }
+}

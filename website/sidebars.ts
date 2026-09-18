@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
         'rules/no-untranslated-string',
         'rules/plugin-activation-args',
         'rules/plugin-description',
+        'rules/plugin-id-convention',
         'rules/prefer-lazy-imports',
         'rules/prefer-signal-this-arg',
         'rules/require-disposable-ownership',

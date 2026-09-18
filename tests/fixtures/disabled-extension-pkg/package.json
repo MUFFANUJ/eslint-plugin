@@ -1,0 +1,7 @@
+{
+  "name": "@jupyterlab/disabled-extension",
+  "jupyterlab": {
+    "extension": false,
+    "mimeExtension": false
+  }
+}

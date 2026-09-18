@@ -1,0 +1,6 @@
+{
+  "name": "@jupyterlab/example-mime",
+  "jupyterlab": {
+    "mimeExtension": true
+  }
+}

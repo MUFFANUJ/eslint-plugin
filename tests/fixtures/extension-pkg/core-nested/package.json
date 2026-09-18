@@ -1,0 +1,6 @@
+{
+  "name": "@jupyterlab/core-nested",
+  "jupyterlab": {
+    "coreDependency": true
+  }
+}
