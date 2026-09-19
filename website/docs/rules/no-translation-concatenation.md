@@ -2,41 +2,6 @@
 
 Forbid concatenating dynamic values into JupyterLab translation messages.
 
-## Why
-
-The translation string extractor reads your source statically — it never runs
-it. When a message is built with `+`, only the literal parts are in the source,
-so the extractor has nothing complete to put in the catalog and the string
-never gets translated:
-
-```ts
-trans.__('Hello ' + userName); // never extracted
-```
-
-Concatenating literals is different. `'a' + 'b'` is only a source-formatting
-choice — the extractor still sees the whole message — so it stays allowed, and
-is a useful way to break a long string across lines.
-
-See [Rules](https://jupyterlab.readthedocs.io/en/stable/extension/internationalization.html#rules).
-
-## Rule details
-
-The rule checks calls to any `TranslationBundle` method on a recognized
-translation bundle — `trans`, `this.trans`, `this._trans`, `props.trans`, or
-`this.props.trans`.
-
-A message argument is reported when its own top-level form is a `+` expression
-with at least one operand the extractor cannot read. String literals and
-template literals with no interpolation count as readable, so a `+` tree made
-only of those is fine.
-
-Only the arguments that carry message text are checked. For
-`trans.__(msgid, ...args)` that is `msgid` alone — the placeholder arguments
-after it are exactly where dynamic values belong. The other methods follow the
-same idea: `_n`/`ngettext` check the singular and plural, `_p`/`pgettext` check
-the context and message, and `dcnpgettext` checks everything except its
-`domain`, which selects a catalog rather than carrying text.
-
 ## Incorrect
 
 ```ts
@@ -56,6 +21,21 @@ trans._n('%1 file', '%1 files', n);
 trans.__('Part 1 of long message.\n' + 'Part 2 of long message.\n');
 ```
 
+## Why
+
+Building a message with `+` and a variable prevents the translation extractor from collecting the complete message. Use placeholders to keep the message intact and let translators choose where each value belongs. Concatenating only literal strings is allowed, for example to split a long message across source lines.
+
+See the [JupyterLab translation rules](https://jupyterlab.readthedocs.io/en/stable/extension/internationalization.html#rules).
+
 ## Options
 
 This rule has no options.
+
+<details>
+<summary>Which translation arguments are checked?</summary>
+
+The rule checks concatenated message text and contexts on `trans`, `this.trans`, `this._trans`, `props.trans` and `this.props.trans`. Placeholder values, plural counts and the catalog domain can be dynamic.
+
+For variables, interpolated templates and other dynamic messages, see [no-dynamic-translation](../no-dynamic-translation).
+
+</details>

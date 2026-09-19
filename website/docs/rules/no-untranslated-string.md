@@ -1,144 +1,88 @@
 # `no-untranslated-string`
 
-Require user-facing string literals to be wrapped in a translation call such as `trans.__()`.
+Wrap user-facing text in a translation call such as `trans.__()`.
 
-## Rule details
-
-The rule reports raw string literals (and template literals without expressions) in the following positions.
-
-In every position, blank strings are never flagged, and neither are bare numbers. Strings of pure punctuation — such as `'/'` and `'-'` — can be translatable, but this rule only flags them when [`enforcePunctuation`](#enforcepunctuation) is on.
-
-### 1. `commands.addCommand()` properties
-
-The `label`, `caption`, and `usage` properties must not contain bare strings. Concise arrow functions returning a raw string (e.g. `() => 'string'`) are also flagged.
+## Incorrect
 
 ```ts
-// Incorrect
 commands.addCommand('file-download', { label: 'Download' });
+node.setAttribute('aria-label', 'Download file');
+```
 
-// Correct
+## Correct
+
+```ts
 commands.addCommand('file-download', { label: trans.__('Download') });
-commands.addCommand('file-download', { label: () => trans.__('Download') });
+node.setAttribute('aria-label', trans.__('Download file'));
 ```
 
-### 2. `element.setAttribute()`
+## Why
 
-Applies to the names in [`checkProperties`](#checkproperties).
+Untranslated labels remain in the original language even when users select a different language for JupyterLab. Translate visible text and accessibility labels so both sighted users and screen reader users receive localized text.
+
+## More examples
+
+### Widget and dialog text
 
 ```ts
 // Incorrect
-node.setAttribute('aria-label', 'main sidebar');
-
-// Correct
-node.setAttribute('aria-label', trans.__('main sidebar'));
-```
-
-### 3. Direct property assignment
-
-Applies to the names in [`checkProperties`](#checkproperties), on any receiver. Because the receiver is not inspected, this also covers widget title properties such as `this.title.label`.
-
-```ts
-// Incorrect
-element.title = 'Close Tab';
-element.ariaLabel = 'Search results';
-element.textContent = 'Save';
-widget.label = 'Save';
 this.title.label = 'Source';
-
-// Correct
-element.title = trans.__('Close Tab');
-element.ariaLabel = trans.__('Search results');
-element.textContent = trans.__('Save');
-widget.label = trans.__('Save');
-this.title.label = trans.__('Source');
-```
-
-### 4. `showDialog()` and `new Dialog()` options
-
-The `title` and `body` options must not be raw strings.
-
-```ts
-// Incorrect
 showDialog({ title: 'Confirm', body: 'Are you sure?' });
-
-// Correct
-showDialog({ title: trans.__('Confirm'), body: trans.__('Are you sure?') });
-```
-
-### 5. Dialog button builder labels
-
-Applies to `Dialog.okButton`, `Dialog.cancelButton`, `Dialog.warnButton`, and `Dialog.errorButton`.
-
-```ts
-// Incorrect
 Dialog.okButton({ label: 'Build' });
 
 // Correct
+this.title.label = trans.__('Source');
+showDialog({ title: trans.__('Confirm'), body: trans.__('Are you sure?') });
 Dialog.okButton({ label: trans.__('Build') });
 ```
 
-### 6. JSX text content
-
-Raw text between JSX tags and string literals inside `{...}` expressions are flagged.
-
-```tsx
-// Incorrect
-const el = <span>Error message:</span>;
-const el = <span>{'raw string'}</span>;
-
-// Correct
-const el = <span>{trans.__('Error message:')}</span>;
-```
-
-### 7. JSX attributes
-
-Applies to the names in [`checkProperties`](#checkproperties), on any element.
-
-```tsx
-// Incorrect
-const el = <span aria-label="Close" />;
-const el = <MyCheckbox label="Enable feature" />;
-
-// Correct
-const el = <span aria-label={trans.__('Close')} />;
-const el = <MyCheckbox label={trans.__('Enable feature')} />;
-```
-
-### 8. Object properties
-
-Applies to the names in [`checkProperties`](#checkproperties), in any object literal — this catches labels handed to widgets and components the rule knows nothing about.
+The same applies to text assigned to DOM properties or passed in options:
 
 ```ts
 // Incorrect
+element.textContent = 'Save';
 new MyField({ ...options, label: 'My field' });
 launcher.add({ command, category: 'Notebook' });
 
 // Correct
+element.textContent = trans.__('Save');
 new MyField({ ...options, label: trans.__('My field') });
 launcher.add({ command, category: trans.__('Notebook') });
 ```
 
-### Conditional values
-
-In every position above, a conditional is read one branch at a time, so each string that can reach the user needs its own translation call. This covers `? :`, `||`, `??` and `&&`.
+### JSX text and attributes
 
 ```tsx
 // Incorrect
-const el = <button title={visible ? 'Hide layer' : 'Show layer'} />;
-node.textContent = count ? 'Some files' : 'No files';
-const opts = { label: name ?? 'Untitled' };
+const message = <span>Error message:</span>;
+const checkbox = <MyCheckbox label="Enable feature" />;
 
 // Correct
-const el = (
+const message = <span>{trans.__('Error message:')}</span>;
+const checkbox = <MyCheckbox label={trans.__('Enable feature')} />;
+```
+
+### Conditional text
+
+Translate each possible message, including fallback values:
+
+```tsx
+// Incorrect
+const button = <button title={visible ? 'Hide layer' : 'Show layer'} />;
+const options = { label: name ?? 'Untitled' };
+
+// Correct
+const button = (
   <button title={visible ? trans.__('Hide layer') : trans.__('Show layer')} />
 );
-node.textContent = count ? trans.__('Some files') : trans.__('No files');
-const opts = { label: name ?? trans.__('Untitled') };
+const options = { label: name ?? trans.__('Untitled') };
 ```
 
 ## Options
 
-```ts
+Defaults:
+
+```json
 {
   "enforcePunctuation": false,
   "checkProperties": [
@@ -159,19 +103,30 @@ const opts = { label: name ?? trans.__('Untitled') };
 
 ### `enforcePunctuation`
 
-Set to `true` to enforce translation of punctuation characters such as `,`, `-`, `+`, and other symbols. It has no effect on bare numbers, which are never flagged.
+Set to `true` to require translation of punctuation such as `/`, `-` and `+`. Blank strings and bare numbers are never reported.
 
 ```ts
-// Not flagged by default; flagged when enforcePunctuation is true
+// Reported only when enforcePunctuation is true.
 item.textContent = '/';
-anchor.textContent = '+';
-const el = <span>,</span>;
 ```
 
 ### `checkProperties`
 
-The names checked in sections 2, 3, 7 and 8 above — object literal properties, `setAttribute()` attributes, assignment targets and JSX attributes all share this one list, so a name can never apply in one of those positions but not another.
+Names of object properties, DOM attributes, assignment targets and JSX attributes to check. Hyphenated and camelCase spellings are equivalent: either `aria-label` or `ariaLabel` covers both.
 
-The list **replaces** the default rather than adding to it. Pass `[]` to turn those four checks off; the `addCommand`, dialog, dialog button and JSX text checks (sections 1, 4, 5 and 6) are not configurable and stay on.
+This list **replaces** the defaults. Pass `[]` to turn off these configurable checks. Command text, dialog text, dialog button labels and JSX text are still checked.
 
-Hyphenated and camelCase spellings are the same entry, so listing either `aria-label` or `ariaLabel` covers both the `aria-label` attribute and the `ariaLabel` DOM property.
+<details>
+<summary>Which text is checked?</summary>
+
+The rule checks string literals and template literals without interpolation in:
+
+- Command `label`, `caption` and `usage` properties, including concise arrow functions returning text.
+- `showDialog()` and `new Dialog()` titles and bodies.
+- Labels passed to `Dialog.okButton()`, `cancelButton()`, `warnButton()` and `errorButton()`.
+- JSX text, including string literals inside braces.
+- The names in `checkProperties`, on any object or element.
+
+Conditional branches and fallback expressions are checked separately. Because property checks apply regardless of the receiving object, a configured name can also match text that is not shown to users. Adjust `checkProperties` or disable the rule for an intentional exception.
+
+</details>

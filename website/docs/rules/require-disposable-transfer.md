@@ -3,59 +3,6 @@
 Require calls returning `IDisposable` to transfer ownership to a caller, field,
 or disposable collection.
 
-## Why
-
-Functions that return `IDisposable` hand cleanup responsibility to the caller.
-Ignoring the returned value usually means the cleanup path has been lost.
-
-## Rule details
-
-This rule checks factory-like call expressions such as `create*`, `make*`,
-`build*`, and `new*` whose return type is compatible with `IDisposable` or
-`IObservableDisposable` when TypeScript type information is available. It also
-recognizes the known Lumino factories `DisposableSet.from(...)` and
-`ObservableDisposableSet.from(...)`.
-
-It ignores disposable values created directly inside a Jupyter plugin `activate`
-function, where services commonly live for the application lifetime. All three
-ways of writing one are recognised: an inline `activate` property, a function
-named `activate`, and a separate function referenced as `activate: activateFoo`.
-
-It accepts common ownership patterns:
-
-- Adding the result to a typed `DisposableSet` or a conventionally named
-  disposable collection such as `this._disposables.add(...)`
-- Passing the result as a direct array item to `DisposableSet.from(...)` or
-  `ObservableDisposableSet.from(...)`
-- Returning the result
-- Assigning it to an object field
-- Storing it in a class-field collection with `this._items.set(...)`
-- Calling `.dispose()` immediately
-- Storing it in a variable that is later added, returned, assigned to a field,
-  or disposed
-- Passing it to a configured ownership helper function or default ownership
-  sink such as `add`, `addCell`, `addItem`, `addMenu`, `addWidget`,
-  `insertWidget`, or `registerStatusItem`
-- Passing it to a call or constructor that declares the corresponding parameter
-  as a disposable type, including as a property of an options object. This is
-  decided from the callee's declared types, so it works for your own APIs and
-  needs no table of known classes.
-- Disposing it unconditionally inside a callback, so the
-  `requestAnimationFrame(() => splash.dispose())` and
-  `void load().then(() => splash.dispose())` idioms are accepted. Disposal that
-  is itself conditional inside the callback is still reported.
-- Declaring it as an exported binding (`export const tracker = ...`, including
-  inside an exported `namespace`): ownership of a module singleton passes to the
-  importers of the module.
-
-By default, the rule does not report calls whose return value is a borrowed
-reference, a fluent initializer, or a registration handle that the caller is not
-expected to own. Representative entries are `get`, `find`, `add`, `addCommand`,
-`open`, `register`, `set`, and `transform`, plus any name matching
-`add*Factory`. For the full list see the
-[`DEFAULT_IGNORED_RETURN_FUNCTION_NAMES`](https://github.com/search?q=repo%3Ajupyterlab%2Feslint-plugin+const+DEFAULT_IGNORED_RETURN_FUNCTION_NAMES&type=code)
-constant.
-
 ## Incorrect
 
 ```ts
@@ -87,6 +34,17 @@ const disposables = DisposableSet.from([createDisposable()]);
 disposables.dispose();
 ```
 
+## Why
+
+Functions that return `IDisposable` hand cleanup responsibility to the caller.
+Ignoring the returned value usually means the cleanup path has been lost.
+
+## Usage
+
+By default, the rule checks factory-named calls such as `create*`, `make*`, `build*` and `new*` that return a disposable. Type-aware linting is needed to identify these return types; the known Lumino `DisposableSet.from()` and `ObservableDisposableSet.from()` factories are recognized without it.
+
+Values created directly in a Jupyter plugin’s `activate()` function are exempt because they commonly live for the application lifetime. A reported value can be returned, assigned to a field, put in a disposable collection, passed to an ownership helper or disposed. Keeping it in a local variable without arranging cleanup is not enough.
+
 ## Options
 
 ### `ownershipFunctionNames`
@@ -109,16 +67,9 @@ entirely.
 
 Function or method names whose disposable return value should be treated as
 borrowed, or as owned by a registration or session API. Names given here are
-**added** to the default list described above.
+**added** to the defaults, which include `get`, `find`, `addCommand`, `open`, `register`, `set` and `transform`.
 
-Note that this option has no effect under the default settings: only
-factory-named calls (`create*`, `build*`, `make*`, `new*`) have their return
-value checked, and no name in the default list matches that pattern. The list
-becomes load-bearing only once `checkAllDisposableReturns` is enabled, where on
-JupyterLab it takes the finding count down by an order of magnitude.
-Whether a returned disposable is borrowed or freshly created is not something
-the declared types express, which is why this remains a name list while ownership
-does not.
+Use this option with `checkAllDisposableReturns` to exempt APIs that return borrowed objects or registration handles. The default checks only factory-named calls.
 
 ### `extendDefaultIgnoredReturnFunctionNames`
 
@@ -167,3 +118,12 @@ Strictest possible checking, dropping every default exemption:
   ]
 }
 ```
+
+<details>
+<summary>Other recognized ownership patterns</summary>
+
+With type information, passing a disposable to a parameter declared as a disposable type counts as a handoff, including through an options object. Configured ownership helper names work without that type information.
+
+The rule also accepts class-field collections, exported bindings and unconditional disposal in a callback. These patterns establish an owner; they do not guarantee that the owner eventually disposes the resource.
+
+</details>

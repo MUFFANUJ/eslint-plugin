@@ -2,18 +2,6 @@
 
 Ensure JupyterLab command registrations include a `describedBy` property.
 
-## Why
-
-JupyterLab commands with arguments should include explicit command argument metadata.
-This improves discoverability and helps maintain command contracts.
-
-## Rule details
-
-The rule checks calls that match `*.addCommand(...)` patterns and reports when:
-
-- The command options object has an `execute` function
-- But does not provide `describedBy`
-
 ## Incorrect
 
 ```ts
@@ -43,6 +31,10 @@ app.commands.addCommand(CommandIDs.test, {
   }
 });
 ```
+
+## Why
+
+Command argument metadata tells callers which values a command accepts. For example, the schema above describes `value` as a string. Add `describedBy` when registering a command with an `execute` function.
 
 ## Options
 

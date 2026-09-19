@@ -1,15 +1,6 @@
 # `token-format`
 
-Ensure JupyterLab `Token` ids follow the `<package>:<TokenSymbol>` naming convention where the symbol is a valid JavaScript identifier.
-
-## Rule details
-
-The rule inspects `new Token(id, ...)` expressions where `id` is a string literal and reports when:
-
-- The id contains no `:` separator
-- The symbol after `:` is not a valid JavaScript identifier (`/^[a-zA-Z_$][a-zA-Z0-9_$]*$/`)
-
-Non-literal first arguments (variables, template literals) are not checked.
+Use `<package>:<TokenSymbol>` for JupyterLab token IDs.
 
 ## Incorrect
 
@@ -29,6 +20,27 @@ export const IFooService = new Token<IFooService>(
 );
 ```
 
+## Why
+
+Including the package name and service symbol makes a token easy to identify. The part after `:` must start with a letter, `_` or `$` and contain only those characters or digits. A missing `:` is also reported.
+
+For example, include the package when naming a service token:
+
+```ts
+// Incorrect: no package/symbol separator.
+new Token<IFooService>('IFooService', 'A foo service');
+
+// Correct
+new Token<IFooService>('@test/pkg:IFooService', 'A foo service');
+```
+
 ## Options
 
 This rule has no options.
+
+<details>
+<summary>Which token IDs are checked?</summary>
+
+The rule checks string literals passed to `new Token(...)`. Variables and template literals are not checked.
+
+</details>

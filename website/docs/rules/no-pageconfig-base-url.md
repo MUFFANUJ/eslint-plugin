@@ -2,16 +2,6 @@
 
 Disallow calling `PageConfig.getBaseUrl()` outside of `makeSettings()`.
 
-## Why
-
-JupyterLab supports swapping the backend URL at runtime via a custom `ServiceManagerPlugin<ServerConnection.ISettings>`. This only works when code retrieves `baseUrl` fresh from a stored `ServerConnection.ISettings` object each time it is needed, rather than capturing it once at construction time.
-
-Calling `PageConfig.getBaseUrl()` directly bypasses `ServerConnection.ISettings` entirely, making the backend URL effectively immutable for the lifetime of the object, especially when memoizing the URL in a field.
-
-## Rule details
-
-The rule reports every call expression of the form `PageConfig.getBaseUrl()`. The only legitimate call site is inside the `ServerConnection.makeSettings()` implementation itself, and in tests or examples.
-
 ## Incorrect
 
 ```ts
@@ -44,6 +34,14 @@ activate: (app: JupyterFrontEnd) => {
   return new MyManager({ serverSettings });
 };
 ```
+
+## Why
+
+JupyterLab can switch backend URLs at runtime. Reading `baseUrl` from the stored `ServerConnection.ISettings` each time allows requests to use the current backend. Calling `PageConfig.getBaseUrl()` or caching its result bypasses those settings.
+
+## Exceptions
+
+The rule reports every `PageConfig.getBaseUrl()` call. Disable it where that call is intentional, such as the implementation of `ServerConnection.makeSettings()`, or tests and examples of that API.
 
 ## Options
 

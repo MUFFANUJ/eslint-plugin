@@ -2,49 +2,6 @@
 
 Prefer the Galata `page.notebook` helper over raw Playwright selectors and keyboard shortcuts for notebook cell operations.
 
-## Why
-
-Galata UI tests that drive notebook cells through raw selectors are brittle: JupyterLab's cell DOM changes between releases, and more importantly raw interactions skip the readiness logic the helpers perform.
-
-## Rule details
-
-The rule only reports when it can prove, statically, that the interaction targets a notebook cell.
-
-A selector interaction is reported when **all** of the following hold:
-
-- the chain is rooted at the `page` fixture (`page.click(sel)`, or `page.locator(sel).first().click()`), directly or through a `const` holding a locator;
-- every selector argument resolves to a static string. Resolution follows `const` bindings, so the shared `const cellSelector = '… .jp-Cell'` idiom is seen through; a selector interpolating a value that is not statically known, such as ``page.locator(`${getScope()} .jp-Cell`)``, hides the scope it was written with and is skipped;
-- the selector carries a cell **root** token (`.jp-Cell*`, `.jp-CodeCell`, `.jp-MarkdownCell`, `.jp-RawCell`, `.jp-Notebook-cell`) as an actual CSS class or attribute.
-- the selector has no union (`,`) or sibling combinator (`+`, `~`), which would let the cell token sit in a branch the gesture never lands in;
-- the selector is not scoped to a widget the notebook helper does not drive (`.jp-CodeConsole`, `.jp-Dialog`, `.jp-FileEditor`, `.jp-Terminal`);
-
-The gesture then selects the message:
-
-| Gesture                             | Target                       | Suggested helper                                   |
-| ----------------------------------- | ---------------------------- | -------------------------------------------------- |
-| `fill`, `type`, `pressSequentially` | cell editor                  | `page.notebook.setCell()` / `addCell()`            |
-| `click`, `dblclick`                 | cell editor                  | `page.notebook.enterCellEditingMode()`             |
-| `click`, `dblclick`                 | the cell or its input prompt | `page.notebook.selectCells()` / `getCellLocator()` |
-| `press` with a run shortcut         | cell or editor               | `page.notebook.runCell()` / `run()`                |
-
-`setCell()` presses `Control+A` first and replaces the whole source, while `type()` and `pressSequentially()` append at the caret. On a cell that is already non-empty the two write different text.
-
-### Bare keyboard shortcuts
-
-A bare `page.keyboard.press('Control+Enter')` is reported **only** when the preceding statement in the same block, skipping any `expect` assertions, was itself reported by this rule. Both have to be statements of that block: an interaction hanging off `if (hasCell) …` is skipped by a shortcut written after the `if`, so it does not arm the gate. Two statements sharing a block — a conditional block included — always run together, so that pairing does report.
-
-The reason is that a bare keyboard press carries no context: the rule sees the string `'Shift+Enter'` and nothing else, so it cannot tell which widget has focus (the console binds it to `console:run-forced`, and Galata ships no console helper to suggest instead), which cell index to pass to `runCell()`, or whether the binding is itself the thing under test — `cells.test.ts` has `test('Run code cell with Ctrl + Enter')`, and both notebook scroll tests press the key precisely _because_ `runCell()` switches to command mode first.
-
-Note that "the test does not want to wait for the kernel" is _not_ a reason to skip the helper: `runCell(index, { wait: false })` runs the cell without awaiting completion while still resetting the execution counter and waiting until the kernel can schedule the execution. Code that presses the shortcut only to avoid the wait should use that option.
-
-### Known limitations
-
-The rule does not report on:
-
-- locators held in a `let` or a parameter, or anything derived from `page.notebook.getCellLocator()`;
-- bare run shortcuts that are not adjacent to a flagged raw cell interaction;
-- selectors interpolating a value that is not statically known;
-
 ## Incorrect
 
 ```ts
@@ -77,6 +34,31 @@ await page
   .fill('print("hello")');
 ```
 
+## Why
+
+Raw cell selectors depend on notebook markup and skip the readiness checks built into Galata. The helpers describe the action directly: set the source, select a cell or run it.
+
 ## Options
 
 This rule has no options.
+
+## Choosing a helper
+
+`setCell()` replaces the entire cell source. Raw `type()` and `pressSequentially()` append at the caret, so check that replacing the source is what your test intends.
+
+To start execution without waiting for completion, use:
+
+```ts
+await page.notebook.runCell(0, { wait: false });
+```
+
+Keep raw keyboard interactions when the shortcut or its focus behavior is itself under test; disable the rule for that line if needed.
+
+<details>
+<summary>Scope and limitations</summary>
+
+The rule checks interactions on `page` that clearly target notebook cells, including static selectors and locators stored in unchanged `const` bindings. It skips selectors with unknown interpolated values, selector unions or sibling combinators, and selectors scoped to consoles, dialogs, file editors or terminals.
+
+A bare run shortcut is reported only immediately after a reported cell interaction in the same block, allowing intervening assertions. Otherwise the rule cannot tell which widget has focus. Locators returned by `page.notebook.getCellLocator()` are not reported.
+
+</details>

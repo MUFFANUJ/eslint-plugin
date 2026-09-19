@@ -2,17 +2,6 @@
 
 Ensure all `JupyterFrontEndPlugin` objects define a non-empty `description` property.
 
-## Why
-
-A plugin description improves readability for maintainers and integrators, especially in larger extension ecosystems.
-
-## Rule details
-
-The rule inspects `JupyterFrontEndPlugin` object declarations and reports when:
-
-- `description` is missing
-- `description` is an empty string
-
 ## Incorrect
 
 ```ts
@@ -37,6 +26,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
   }
 };
 ```
+
+## Why
+
+A description tells maintainers and integrators what a plugin does without requiring them to read its activation code. Use a short, meaningful description; an empty or whitespace-only string is also reported.
 
 ## Options
 

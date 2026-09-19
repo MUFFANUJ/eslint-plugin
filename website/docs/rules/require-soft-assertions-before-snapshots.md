@@ -2,18 +2,6 @@
 
 Require `expect.soft()` for snapshot assertions that are not the last in a Playwright test block.
 
-## Why
-
-Playwright's `toMatchSnapshot()` paired with a hard `expect()` call short-circuits on the first failure: subsequent snapshot assertions never run, so their snapshots cannot be captured or updated in the same run. Using `expect.soft()` for all but the last snapshot ensures every snapshot is evaluated even when one fails, keeping the full suite updatable with `--update-snapshots`.
-
-## Rule details
-
-The rule inspects any callback passed to `test(...)`, `it(...)`, or their dot-property variants — including modifiers (`test.only`, `test.skip`, `test.fixme`, `test.fail`) and hooks (`test.beforeAll`, `test.beforeEach`, `test.afterAll`, `test.afterEach`) — and collects every `expect(...).toMatchSnapshot(...)` call found within that callback. When a block contains more than one snapshot assertion:
-
-- All assertions **except the last** must use `expect.soft(...)`.
-- The last assertion may use either `expect(...)` or `expect.soft(...)`.
-- Non-snapshot assertions (e.g. `await expect(locator).toBeVisible()`) are ignored entirely.
-
 ## Incorrect
 
 ```ts
@@ -44,6 +32,17 @@ test('single screenshot', async ({ page }) => {
 });
 ```
 
+## Why
+
+A hard snapshot assertion stops the test at its first failure. Later screenshots are never captured, so you cannot inspect all visual changes from that run. Use `expect.soft()` to continue to the remaining snapshots while still failing the test if any assertion fails. The last snapshot can use either form.
+
 ## Options
 
 This rule has no options.
+
+<details>
+<summary>Which assertions are checked?</summary>
+
+The rule checks `toMatchSnapshot()` assertions in `test()` and `it()` callbacks, including modifiers and hooks such as `test.only()` and `test.beforeEach()`. Other assertions, such as `toBeVisible()` and `toHaveScreenshot()`, are not checked.
+
+</details>
